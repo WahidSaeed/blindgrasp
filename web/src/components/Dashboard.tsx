@@ -1,13 +1,13 @@
 "use client";
 
 import clsx from "clsx";
-import { CircleHelp, FlaskConical, Hand, Layers, Move, Pause, Play, RotateCcw, ScanEye, Snowflake, Target, Weight } from "lucide-react";
+import { CircleHelp, FlaskConical, Hand, Layers, Move, PanelBottom, PanelLeft, PanelRight, Pause, Play, RotateCcw, ScanEye, Snowflake, Target, Weight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LineChart } from "@/components/LineChart";
 import { InfoTip, Toasts, useStoredFlag, useToasts } from "@/components/ui";
 import { LEARNER_LABEL, Viewport } from "@/components/Viewport";
 import { narrate, type Tone } from "@/lib/narrate";
-import { isPushing, send, SIM_URL, useSimState, type Mode, type SimState } from "@/lib/sim";
+import { isPushing, send, useSimState, type Mode, type SimState } from "@/lib/sim";
 
 const EXPERIMENTS: { mode: Mode; id: string; title: string; blurb: string; icon: typeof Hand }[] = [
   { mode: "map", id: "EXP-01", title: "Feel the table", blurb: "Touch spots to learn where the boxes are", icon: Hand },
@@ -36,6 +36,7 @@ export function Dashboard() {
   const [toasts, toast] = useToasts();
   const push = isPushing(state);
   const disarm = useCallback(() => setArmed(false), []);
+  const [panels, togglePanel] = usePanels();
 
   const act = useCallback(
     (name: ActName) => {
@@ -78,31 +79,43 @@ export function Dashboard() {
         act(a);
       }
       if (e.key.toLowerCase() === "g") setArmed((x) => !x);
+      const panel = ({ c: "left", i: "right", l: "bottom" } as const)[e.key.toLowerCase() as "c" | "i" | "l"];
+      if (panel) togglePanel(panel);
       const n = Number(e.key);
       if (n >= 1 && n <= 4) setMode(EXPERIMENTS[n - 1].mode);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [act, setMode]);
+  }, [act, setMode, togglePanel]);
 
-  const exp = EXPERIMENTS.find((x) => x.mode === state?.mode);
+  const ease = "320ms cubic-bezier(0.22, 1, 0.36, 1)";
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-bench max-lg:h-auto max-lg:overflow-visible">
-      <TopBar state={state} connected={connected} exp={exp} act={act} onHelp={() => setHelp(true)} onAbout={() => setSeenIntro(false)} />
+    <div className="flex h-screen flex-col gap-2 overflow-hidden p-2 pb-0">
+      <TopBar state={state} connected={connected} act={act} setMode={setMode} panels={panels} togglePanel={togglePanel} onHelp={() => setHelp(true)} onAbout={() => setSeenIntro(false)} />
 
-      <div className="grid min-h-0 flex-1 gap-px bg-line lg:grid-cols-[236px_minmax(0,1fr)_300px]">
-        <Sidebar state={state} push={push} armed={armed} onArm={() => setArmed((a) => !a)} act={act} setMode={setMode} />
-
-        <div className="grid min-h-0 gap-px bg-line lg:grid-rows-[minmax(0,1fr)_210px]">
-          <Viewport state={state} connected={connected} armed={armed} onClicked={disarm} commentary={<Commentary state={state} connected={connected} />} />
-          <div className="grid min-h-0 gap-px bg-line md:grid-cols-[1fr_1fr_1.15fr] max-lg:[&>*]:h-[220px]">
-            <Scopes state={state} push={push} />
-            <Console events={state?.events ?? []} error={state?.error ?? null} />
+      <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: `${panels.left ? 268 : 0}px minmax(0,1fr) ${panels.right ? 308 : 0}px`, transition: `grid-template-columns ${ease}` }}>
+        <div inert={!panels.left} className={clsx("min-h-0 overflow-hidden transition-opacity duration-300", panels.left ? "pr-2 opacity-100" : "opacity-0")}>
+          <div className="h-full w-[260px]">
+            <Sidebar state={state} push={push} armed={armed} onArm={() => setArmed((a) => !a)} act={act} setMode={setMode} onClose={() => togglePanel("left")} />
           </div>
         </div>
 
-        <Inspector state={state} push={push} />
+        <div className="grid min-h-0 min-w-0" style={{ gridTemplateRows: `minmax(0,1fr) ${panels.bottom ? 226 : 0}px`, transition: `grid-template-rows ${ease}` }}>
+          <Viewport state={state} connected={connected} armed={armed} onClicked={disarm} commentary={<Commentary state={state} connected={connected} />} />
+          <div inert={!panels.bottom} className={clsx("min-h-0 overflow-hidden transition-opacity duration-300", panels.bottom ? "pt-2 opacity-100" : "opacity-0")}>
+            <div className="grid h-[218px] grid-cols-[1fr_1fr_1.15fr] gap-2">
+              <Scopes state={state} push={push} />
+              <Console events={state?.events ?? []} error={state?.error ?? null} />
+            </div>
+          </div>
+        </div>
+
+        <div inert={!panels.right} className={clsx("min-h-0 overflow-hidden transition-opacity duration-300", panels.right ? "pl-2 opacity-100" : "opacity-0")}>
+          <div className="h-full w-[300px]">
+            <Inspector state={state} push={push} onClose={() => togglePanel("right")} />
+          </div>
+        </div>
       </div>
 
       <StatusBar state={state} connected={connected} />
@@ -116,10 +129,39 @@ export function Dashboard() {
 
 /* ───────────── top bar ───────────── */
 
-function TopBar({ state, connected, exp, act, onHelp, onAbout }: { state: SimState | null; connected: boolean | null; exp?: (typeof EXPERIMENTS)[number]; act: (n: ActName) => void; onHelp: () => void; onAbout: () => void }) {
+type PanelKey = "left" | "right" | "bottom";
+type Panels = Record<PanelKey, boolean>;
+
+/** Which side panels are open. Everything starts closed; the choice is remembered. */
+function usePanels(): [Panels, (k: PanelKey) => void] {
+  const [p, setP] = useState<Panels>({ left: false, right: false, bottom: false });
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("bg-panels") ?? "null");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore once from localStorage after mount
+      if (saved) setP((cur) => ({ ...cur, ...saved }));
+    } catch {}
+  }, []);
+  const toggle = useCallback((k: PanelKey) => {
+    setP((cur) => {
+      const next = { ...cur, [k]: !cur[k] };
+      localStorage.setItem("bg-panels", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  return [p, toggle];
+}
+
+const PANEL_BUTTONS: { k: PanelKey; label: string; key: string; icon: typeof Hand }[] = [
+  { k: "left", label: "Controls", key: "C", icon: PanelLeft },
+  { k: "right", label: "Readouts", key: "I", icon: PanelRight },
+  { k: "bottom", label: "Charts & log", key: "L", icon: PanelBottom },
+];
+
+function TopBar({ state, connected, act, setMode, panels, togglePanel, onHelp, onAbout }: { state: SimState | null; connected: boolean | null; act: (n: ActName) => void; setMode: (m: Mode) => void; panels: Panels; togglePanel: (k: PanelKey) => void; onHelp: () => void; onAbout: () => void }) {
   const paused = state?.auto === false;
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
+    <header className="panel !flex-row h-12 shrink-0 items-center gap-2.5 !overflow-visible px-2.5">
       <div className="flex items-center gap-2.5">
         <div className="grid h-6 w-6 grid-cols-2 gap-[3px] rounded-[3px] border border-line-2 bg-well p-[4px]" aria-hidden>
           <span className="rounded-full bg-touch" />
@@ -127,37 +169,39 @@ function TopBar({ state, connected, exp, act, onHelp, onAbout }: { state: SimSta
           <span className="rounded-full bg-fg-3" />
           <span className="rounded-full bg-model" />
         </div>
-        <span className="font-mono text-[13px] font-semibold tracking-[0.18em] text-fg">BLINDGRASP</span>
-        <span className="font-mono text-[11px] text-fg-3">workstation</span>
+        <span className="text-[14px] font-semibold tracking-tight text-fg">Blindgrasp</span>
+        <span className={clsx("h-1.5 w-1.5 rounded-full", connected ? "bg-ok" : connected === false ? "bg-warn" : "bg-fg-3")} title={connected ? "connected" : "offline"} />
       </div>
       <span className="h-5 w-px bg-line-2" />
-      <div className="flex min-w-0 items-center gap-2 font-mono text-[11px]">
-        <span className="text-fg-3">experiment</span>
-        <span className="truncate text-fg">{exp ? `${exp.id} · ${exp.title}` : "—"}</span>
-      </div>
+      <select value={state?.mode ?? "script"} onChange={(e) => setMode(e.target.value as Mode)} className="field !w-[190px]" aria-label="Experiment">
+        {EXPERIMENTS.map((e) => (
+          <option key={e.mode} value={e.mode}>{e.title}</option>
+        ))}
+      </select>
+      <button onClick={() => act("auto")} className="tool tool-primary w-[84px] justify-center" title="Space">
+        {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+        {paused ? "Run" : "Pause"}
+      </button>
+      <button onClick={() => act("reset")} className="tool" title="R">
+        <RotateCcw className="h-3.5 w-3.5" /> Reset
+      </button>
 
       <div className="ml-auto flex items-center gap-1.5">
-        <button onClick={() => act("auto")} className={clsx("tool w-[92px] justify-center", paused ? "tool-on" : "")} title="Space">
-          {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-          {paused ? "Run" : "Pause"}
-        </button>
-        <button onClick={() => act("reset")} className="tool" title="R">
-          <RotateCcw className="h-3.5 w-3.5" /> Reset
-        </button>
-        <label className="ml-1 flex items-center gap-1.5 font-mono text-[11px] text-fg-3">
-          speed
-          <select value={state?.speed ?? 2} onChange={(e) => send({ name: "speed", value: Number(e.target.value) })} className="field !w-[68px]">
-            {SPEEDS.concat(state && !SPEEDS.includes(state.speed) ? [state.speed] : []).map((s) => (
-              <option key={s} value={s}>{s}×</option>
-            ))}
-          </select>
-        </label>
+        <div className="flex h-[30px] items-center rounded-md border border-line-2 bg-black/25 p-0.5">
+          {PANEL_BUTTONS.map(({ k, label, key, icon: Icon }) => (
+            <button
+              key={k}
+              onClick={() => togglePanel(k)}
+              title={`${panels[k] ? "Hide" : "Show"} ${label.toLowerCase()} (${key})`}
+              aria-pressed={panels[k]}
+              className={clsx("flex h-full items-center gap-1.5 rounded-[5px] px-2.5 text-[12.5px] transition-colors", panels[k] ? "bg-white/[0.09] text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" : "text-fg-3 hover:text-fg-2")}
+            >
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </button>
+          ))}
+        </div>
         <span className="mx-1 h-5 w-px bg-line-2" />
-        <span className={clsx("flex items-center gap-1.5 rounded-[3px] border px-2 py-1 font-mono text-[10.5px]", connected ? "border-ok/40 text-ok" : connected === false ? "border-warn/40 text-warn" : "border-line-2 text-fg-3")}>
-          <span className={clsx("h-1.5 w-1.5 rounded-full", connected ? "bg-ok" : connected === false ? "bg-warn" : "bg-fg-3")} />
-          {connected ? "connected" : connected === false ? "offline" : "connecting"}
-        </span>
-        <button onClick={onAbout} className="tool">About</button>
+        <button onClick={onAbout} className="tool !border-transparent !bg-transparent !shadow-none text-fg-2">About</button>
         <button onClick={onHelp} className="tool !px-1.5" title="Shortcuts (?)"><CircleHelp className="h-3.5 w-3.5" /></button>
       </div>
     </header>
@@ -166,10 +210,11 @@ function TopBar({ state, connected, exp, act, onHelp, onAbout }: { state: SimSta
 
 /* ───────────── left: sidebar ───────────── */
 
-function Sidebar({ state, push, armed, onArm, act, setMode }: { state: SimState | null; push: boolean; armed: boolean; onArm: () => void; act: (n: ActName) => void; setMode: (m: Mode) => void }) {
+function Sidebar({ state, push, armed, onArm, act, setMode, onClose }: { state: SimState | null; push: boolean; armed: boolean; onArm: () => void; act: (n: ActName) => void; setMode: (m: Mode) => void; onClose: () => void }) {
   const fr = state?.friction ?? "normal";
   return (
-    <aside className="panel overflow-x-hidden overflow-y-auto pb-4">
+    <aside className="panel h-full overflow-x-hidden overflow-y-auto pb-4">
+      <PanelHead title="Controls" onClose={onClose} />
       <div className="section-title !pt-3">Experiments</div>
       <nav className="flex flex-col px-1.5">
         {EXPERIMENTS.map((e, i) => {
@@ -227,6 +272,13 @@ function Sidebar({ state, push, armed, onArm, act, setMode }: { state: SimState 
 
       <div className="section-title">Parameters</div>
       <div className="flex flex-col gap-3 px-3">
+        <Param label="Simulation speed">
+          <select value={state?.speed ?? 2} onChange={(e) => send({ name: "speed", value: Number(e.target.value) })} className="field">
+            {SPEEDS.concat(state && !SPEEDS.includes(state.speed) ? [state.speed] : []).map((v) => (
+              <option key={v} value={v}>{v}×</option>
+            ))}
+          </select>
+        </Param>
         <Param label="Learner" tip="TabPFN learns from the examples in one pass, with no training. The others are classic baselines to compare against.">
           <select value={state?.learner ?? "tabpfn"} onChange={(e) => send({ name: "learner", value: e.target.value })} className="field">
             {Object.entries(LEARNER_LABEL).map(([v, l]) => (
@@ -248,10 +300,19 @@ function Sidebar({ state, push, armed, onArm, act, setMode }: { state: SimState 
   );
 }
 
+function PanelHead({ title, onClose }: { title: string; onClose: () => void }) {
+  return (
+    <div className="panel-head">
+      <span className="text-fg">{title}</span>
+      <button onClick={onClose} className="ml-auto text-fg-3 hover:text-fg" title="Hide panel" aria-label={`Hide ${title}`}>✕</button>
+    </div>
+  );
+}
+
 function Param({ label, tip, children }: { label: string; tip?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-fg-2">
+      <span className="flex items-center gap-1.5 text-[11.5px] text-fg-2">
         {label}
         {tip && <InfoTip text={tip} align="left" />}
       </span>
@@ -262,9 +323,9 @@ function Param({ label, tip, children }: { label: string; tip?: string; children
 
 function Seg({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
-    <div className="flex h-7 rounded-[3px] border border-line-2 bg-well p-0.5">
+    <div className="flex h-[30px] rounded-md border border-line-2 bg-black/25 p-0.5">
       {options.map(([v, l]) => (
-        <button key={v} type="button" onClick={() => onChange(v)} className={clsx("flex-1 rounded-[2px] font-mono text-[10.5px] transition-colors", value === v ? "bg-line-2 text-fg" : "text-fg-3 hover:text-fg-2")}>
+        <button key={v} type="button" onClick={() => onChange(v)} className={clsx("flex-1 rounded-[5px] text-[11.5px] transition-colors", value === v ? "bg-white/[0.09] text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" : "text-fg-3 hover:text-fg-2")}>
           {l}
         </button>
       ))}
@@ -275,19 +336,19 @@ function Seg({ value, onChange, options }: { value: string; onChange: (v: string
 /* ───────────── commentary (inside the viewport panel) ───────────── */
 
 const TONE: Record<Tone, { c: string; tag: string }> = {
-  info: { c: "text-fg-2 border-fg-3", tag: "STATUS" },
-  think: { c: "text-model border-model", tag: "WORKING" },
-  good: { c: "text-ok border-ok", tag: "OK" },
-  alert: { c: "text-touch border-touch", tag: "EVENT" },
+  info: { c: "text-fg-2 border-line-2 bg-white/[0.03]", tag: "STATUS" },
+  think: { c: "text-[#9ad9f5] border-model/40 bg-model/10", tag: "WORKING" },
+  good: { c: "text-ok border-ok/40 bg-ok/10", tag: "DONE" },
+  alert: { c: "text-[#ffc56b] border-touch/40 bg-touch/10", tag: "EVENT" },
 };
 
 function Commentary({ state, connected }: { state: SimState | null; connected: boolean | null }) {
   const n = narrate(state, connected);
   const t = TONE[n.tone];
   return (
-    <div className="flex shrink-0 items-start gap-3 border-b border-line bg-panel px-3 py-2.5" aria-live="polite">
-      <span className={clsx("mt-0.5 shrink-0 rounded-[2px] border px-1.5 py-px font-mono text-[10px] font-semibold", t.c)}>{t.tag}</span>
-      <div key={n.title} className="min-w-0 animate-[fadein_0.25s_ease-out]">
+    <div className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3" aria-live="polite">
+      <span className={clsx("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em]", t.c)}>{t.tag}</span>
+      <div key={n.title} className="min-w-0 animate-[fadein_0.3s_ease-out] leading-snug">
         <span className="text-[14px] font-semibold text-fg">{n.title}</span>
         <span className="ml-2 text-[13px] text-fg-2">{n.body}</span>
       </div>
@@ -297,10 +358,10 @@ function Commentary({ state, connected }: { state: SimState | null; connected: b
 
 /* ───────────── right: inspector ───────────── */
 
-function Inspector({ state, push }: { state: SimState | null; push: boolean }) {
+function Inspector({ state, push, onClose }: { state: SimState | null; push: boolean; onClose: () => void }) {
   return (
-    <aside className="panel overflow-x-hidden overflow-y-auto">
-      <div className="panel-head">Inspector</div>
+    <aside className="panel h-full overflow-x-hidden overflow-y-auto">
+      <PanelHead title="Readouts" onClose={onClose} />
       <Readouts state={state} push={push} />
       {state?.mode === "script" ? <Protocol beat={state.beat} /> : <HowToRead push={push} />}
       <Legend push={push} />
@@ -488,30 +549,11 @@ function Console({ events, error }: { events: string[]; error: string | null }) 
 /* ───────────── status bar ───────────── */
 
 function StatusBar({ state, connected }: { state: SimState | null; connected: boolean | null }) {
-  const ms = state?.fit_s != null ? Math.round(state.fit_s * 1000) : null;
-  const push = isPushing(state);
-  const items = state
-    ? [
-        `t=${state.t.toFixed(1)}s`,
-        `${state.speed}×`,
-        `learner=${LEARNER_LABEL[state.learner] ?? state.learner}`,
-        `update=${ms ?? "—"}ms`,
-        push ? `push_rows=${state.push_rows}` : `map_rows=${state.rows}`,
-        `friction=${state.friction}`,
-        `mass=${state.mass}`,
-      ]
-    : [];
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-4 overflow-hidden border-t border-line bg-panel-2 px-3 font-mono text-[10.5px] text-fg-3">
-      <span className={clsx("flex items-center gap-1.5", connected ? "text-ok" : connected === false ? "text-warn" : "")}>
-        <span className={clsx("h-1.5 w-1.5 rounded-full", connected ? "bg-ok" : connected === false ? "bg-warn" : "bg-fg-3")} />
-        {SIM_URL.replace(/^https?:\/\//, "")}
-      </span>
-      {items.map((s) => (
-        <span key={s} className="whitespace-nowrap">{s}</span>
-      ))}
-      {state?.fitting && <span className="text-model">● fitting</span>}
-      <span className="ml-auto whitespace-nowrap">drag: orbit · ⌘/ctrl+scroll: zoom · click object → table: move · ? shortcuts</span>
+    <footer className="flex h-7 shrink-0 items-center gap-4 overflow-hidden px-2 text-[11px] text-fg-3">
+      <span className={clsx(connected ? "text-ok" : connected === false ? "text-warn" : "")}>{connected ? "● connected" : connected === false ? "● offline" : "● connecting"}</span>
+      {state && <span>t = {state.t.toFixed(0)} s</span>}
+      <span className="ml-auto whitespace-nowrap">drag to orbit · ⌘/ctrl + scroll to zoom · ? for shortcuts</span>
     </footer>
   );
 }
@@ -521,7 +563,7 @@ function StatusBar({ state, connected }: { state: SimState | null; connected: bo
 function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
-      <div className={clsx("panel max-h-[90vh] w-full overflow-hidden rounded-[4px] border border-line-2 shadow-[0_24px_60px_rgba(0,0,0,0.6)]", wide ? "max-w-2xl" : "max-w-md")} onClick={(e) => e.stopPropagation()}>
+      <div className={clsx("panel max-h-[90vh] w-full animate-[fadein_0.2s_ease-out] !border-line-2", wide ? "max-w-2xl" : "max-w-md")} onClick={(e) => e.stopPropagation()}>
         <div className="panel-head">
           <span className="text-fg">{title}</span>
           <button onClick={onClose} className="ml-auto font-mono text-fg-3 hover:text-fg" aria-label="Close">✕</button>
@@ -555,7 +597,7 @@ function Intro({ onClose }: { onClose: () => void }) {
         ))}
       </ol>
       <div className="mt-4 rounded-[3px] border border-line bg-well p-3 text-xs leading-relaxed text-fg-2">
-        <b className="text-fg">Where to look:</b> the status line above the camera explains what&apos;s happening right now. Pick an experiment on the left (start with <b className="text-fg">Guided demo</b>), and try the interventions.
+        <b className="text-fg">Where to look:</b> the status line above the camera explains what&apos;s happening right now. Pick an experiment at the top (start with <b className="text-fg">Guided demo</b>). When you want more, open <b className="text-fg">Controls</b>, <b className="text-fg">Readouts</b> or <b className="text-fg">Charts &amp; log</b> from the top bar.
       </div>
       <div className="mt-4 flex justify-end">
         <button onClick={onClose} className="tool tool-on">Open the workstation</button>
@@ -566,6 +608,7 @@ function Intro({ onClose }: { onClose: () => void }) {
 
 function Shortcuts({ onClose }: { onClose: () => void }) {
   const rows: [string, string][] = [
+    ["C / I / L", "show or hide controls / readouts / charts & log"],
     ["Space", "run / pause"],
     ["R", "reset the run"],
     ["1 – 4", "load an experiment"],

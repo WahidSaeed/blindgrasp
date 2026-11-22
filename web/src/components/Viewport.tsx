@@ -109,19 +109,19 @@ export function Viewport({ state, connected, armed, onClicked, commentary }: Pro
   const sel = state?.selected?.replace("_", " ");
 
   return (
-    <section className="panel h-full">
+    <section className="panel h-full min-h-0">
       <div className="panel-head">
-        <span className="text-fg">Viewport</span>
-        <span className="text-fg-3">/ cam_01 · 960×600</span>
+        <span className="text-fg">Live view</span>
+        <span className="text-fg-3">Camera 1</span>
         <div className="ml-auto flex items-center gap-1 normal-case tracking-normal">
-          <button onClick={() => send({ name: "zoom", delta: -250 })} title="Zoom in" className="tool !h-6 !px-1.5"><Plus className="h-3 w-3" /></button>
-          <button onClick={() => send({ name: "zoom", delta: 250 })} title="Zoom out" className="tool !h-6 !px-1.5"><Minus className="h-3 w-3" /></button>
+          <button onClick={() => send({ name: "zoom", delta: -250 })} title="Zoom in" className="tool !h-7 !px-2"><Plus className="h-3 w-3" /></button>
+          <button onClick={() => send({ name: "zoom", delta: 250 })} title="Zoom out" className="tool !h-7 !px-2"><Minus className="h-3 w-3" /></button>
           <span className="mx-1 h-4 w-px bg-line-2" />
           {(["front", "top", "side"] as const).map((v) => (
-            <button key={v} onClick={() => send({ name: "view", value: v })} className="tool !h-6 !px-2 font-mono text-[10.5px] capitalize">{v}</button>
+            <button key={v} onClick={() => send({ name: "view", value: v })} className="tool !h-7 !px-2.5 !text-[12px] capitalize">{v}</button>
           ))}
           <span className="mx-1 h-4 w-px bg-line-2" />
-          <button onClick={() => send({ name: "truth" })} title="Overlay the real layout (T)" className={clsx("tool !h-6 !px-2 font-mono text-[10.5px]", state?.truth && "tool-on")}>
+          <button onClick={() => send({ name: "truth" })} title="Overlay the real layout (T)" className={clsx("tool !h-7 !px-2.5 !text-[12px]", state?.truth && "tool-on")}>
             {state?.truth ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />} ground truth
           </button>
         </div>
@@ -144,24 +144,19 @@ export function Viewport({ state, connected, armed, onClicked, commentary }: Pro
               e.preventDefault();
             }}
             className={clsx(
-              "block h-full w-full select-none border border-line-2 object-cover",
+              "block h-full w-full select-none rounded-lg object-cover ring-1 ring-white/10 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.9)]",
               dragging ? "cursor-grabbing" : state?.selected || armed ? "cursor-crosshair" : "cursor-grab",
             )}
           />
 
-          {/* corner brackets */}
-          {["left-0 top-0 border-l-2 border-t-2", "right-0 top-0 border-r-2 border-t-2", "bottom-0 left-0 border-b-2 border-l-2", "bottom-0 right-0 border-b-2 border-r-2"].map((c) => (
-            <span key={c} className={clsx("pointer-events-none absolute -m-1.5 h-4 w-4 border-fg-3", c)} />
-          ))}
-
           {/* HUD */}
-          <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-2 rounded-[2px] bg-black/60 px-2 py-1 font-mono text-[10.5px] text-fg">
+          <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-medium text-fg ring-1 ring-white/10 backdrop-blur-md">
             <span className={clsx("h-1.5 w-1.5 rounded-full", connected ? "bg-warn animate-[blink_1.2s_steps(2)_infinite]" : "bg-fg-3")} />
             {connected ? "LIVE" : "NO SIGNAL"}
             {state && <span className="text-fg-2">· {push ? "PUSH" : "MAP"} · {state.speed}×</span>}
           </div>
           {state?.fitting && (
-            <div className="pointer-events-none absolute right-2 top-2 rounded-[2px] bg-black/60 px-2 py-1 font-mono text-[10.5px] text-model">
+            <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-medium text-[#9ad9f5] ring-1 ring-white/10 backdrop-blur-md">
               ◌ updating {push ? "push model" : "map"}…
             </div>
           )}
@@ -177,7 +172,7 @@ export function Viewport({ state, connected, armed, onClicked, commentary }: Pro
 
           {(armed || sel) && (
             <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-              <div className="rounded-[3px] border border-touch bg-black/80 px-3 py-1.5 font-mono text-xs text-touch">
+              <div className="rounded-full bg-black/60 px-3.5 py-1.5 text-xs font-medium text-[#ffc56b] ring-1 ring-touch/50 backdrop-blur-md">
                 {sel ? <>▸ {sel} picked up — click where it should go on the table · Esc to cancel</> : <>▸ click a box, the red puck or the green goal</>}
               </div>
             </div>
@@ -185,7 +180,7 @@ export function Viewport({ state, connected, armed, onClicked, commentary }: Pro
 
           {state && !state.auto && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/40">
-              <div className="flex items-center gap-2 rounded-[3px] border border-line-2 bg-panel-2 px-3 py-1.5 font-mono text-xs">
+              <div className="flex items-center gap-2 rounded-full bg-black/60 px-4 py-2 text-xs font-medium ring-1 ring-white/15 backdrop-blur-md">
                 <Pause className="h-3.5 w-3.5" /> PAUSED — press Space
               </div>
             </div>
