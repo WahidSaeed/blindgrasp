@@ -22,7 +22,7 @@ export function narrate(s: SimState | null, connected: boolean | null): Narratio
   if (connected === false)
     return { title: "Waiting for the simulation", body: "Start the sim server and this page connects on its own.", tone: "alert" };
   if (!s) return { title: "Connecting…", body: "Loading the robot's world.", tone: "info" };
-  if (!s.auto) return { title: "Paused", body: "Press Space or Resume to continue.", tone: "info" };
+  if (!s.auto) return { title: "Paused", body: "Press Run in the top bar to continue.", tone: "info" };
 
   const ev = latestEvent(s);
   const recent = ev && ev.age < 6 ? ev.text : "";

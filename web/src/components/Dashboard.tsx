@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { CircleHelp, FlaskConical, Hand, Layers, Move, PanelBottom, PanelLeft, PanelRight, Pause, Play, RotateCcw, ScanEye, Snowflake, Target, Weight } from "lucide-react";
+import { ChevronUp, FlaskConical, Hand, Layers, Move, PanelBottomOpen, PanelLeftOpen, PanelRightOpen, Pause, Play, RotateCcw, ScanEye, Snowflake, Target, Weight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LineChart } from "@/components/LineChart";
 import { InfoTip, Toasts, useStoredFlag, useToasts } from "@/components/ui";
@@ -31,7 +31,6 @@ type ActName = "auto" | "reset" | "truth" | "friction" | "mass";
 export function Dashboard() {
   const { state, connected } = useSimState();
   const [seenIntro, setSeenIntro] = useStoredFlag("bg-intro-seen-v2");
-  const [help, setHelp] = useState(false);
   const [armed, setArmed] = useState(false);
   const [toasts, toast] = useToasts();
   const push = isPushing(state);
@@ -62,68 +61,78 @@ export function Dashboard() {
     [toast],
   );
 
+  // Esc cancels "move an object".
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (["SELECT", "INPUT", "TEXTAREA"].includes(t.tagName)) return;
-      if (e.key === "?") return setHelp((h) => !h);
-      if (e.key === "Escape") {
-        setHelp(false);
-        setArmed(false);
-        return;
-      }
-      const map: Record<string, ActName> = { " ": "auto", r: "reset", t: "truth", f: "friction", m: "mass" };
-      const a = map[e.key.toLowerCase()];
-      if (a) {
-        e.preventDefault();
-        act(a);
-      }
-      if (e.key.toLowerCase() === "g") setArmed((x) => !x);
-      const panel = ({ c: "left", i: "right", l: "bottom" } as const)[e.key.toLowerCase() as "c" | "i" | "l"];
-      if (panel) togglePanel(panel);
-      const n = Number(e.key);
-      if (n >= 1 && n <= 4) setMode(EXPERIMENTS[n - 1].mode);
+      if (e.key === "Escape") setArmed(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [act, setMode, togglePanel]);
+  }, []);
 
   const ease = "320ms cubic-bezier(0.22, 1, 0.36, 1)";
+  const lastEvent = state?.events.at(-1)?.replace(/^\[\s*[\d.]+s\]\s*/, "").replace(/^PRESENTER:\s*/, "");
 
   return (
     <div className="flex h-screen flex-col gap-2 overflow-hidden p-2 pb-0">
-      <TopBar state={state} connected={connected} act={act} setMode={setMode} panels={panels} togglePanel={togglePanel} onHelp={() => setHelp(true)} onAbout={() => setSeenIntro(false)} />
+      <TopBar state={state} act={act} setMode={setMode} onAbout={() => setSeenIntro(false)} />
 
-      <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: `${panels.left ? 268 : 0}px minmax(0,1fr) ${panels.right ? 308 : 0}px`, transition: `grid-template-columns ${ease}` }}>
-        <div inert={!panels.left} className={clsx("min-h-0 overflow-hidden transition-opacity duration-300", panels.left ? "pr-2 opacity-100" : "opacity-0")}>
-          <div className="h-full w-[260px]">
-            <Sidebar state={state} push={push} armed={armed} onArm={() => setArmed((a) => !a)} act={act} setMode={setMode} onClose={() => togglePanel("left")} />
-          </div>
-        </div>
-
-        <div className="grid min-h-0 min-w-0" style={{ gridTemplateRows: `minmax(0,1fr) ${panels.bottom ? 226 : 0}px`, transition: `grid-template-rows ${ease}` }}>
-          <Viewport state={state} connected={connected} armed={armed} onClicked={disarm} commentary={<Commentary state={state} connected={connected} />} />
-          <div inert={!panels.bottom} className={clsx("min-h-0 overflow-hidden transition-opacity duration-300", panels.bottom ? "pt-2 opacity-100" : "opacity-0")}>
-            <div className="grid h-[218px] grid-cols-[1fr_1fr_1.15fr] gap-2">
-              <Scopes state={state} push={push} />
-              <Console events={state?.events ?? []} error={state?.error ?? null} />
+      <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: `${panels.left ? 268 : 48}px minmax(0,1fr) ${panels.right ? 308 : 48}px`, transition: `grid-template-columns ${ease}` }}>
+        <div className="min-h-0 overflow-hidden pr-2">
+          {panels.left ? (
+            <div className="h-full w-[260px] animate-[fadein_0.3s_ease-out]">
+              <Sidebar state={state} push={push} armed={armed} onArm={() => setArmed((a) => !a)} act={act} setMode={setMode} onClose={() => togglePanel("left")} />
             </div>
+          ) : (
+            <Rail label="Controls" icon={PanelLeftOpen} onOpen={() => togglePanel("left")} />
+          )}
+        </div>
+
+        <div className="grid min-h-0 min-w-0" style={{ gridTemplateRows: `minmax(0,1fr) ${panels.bottom ? 226 : 48}px`, transition: `grid-template-rows ${ease}` }}>
+          <Viewport state={state} connected={connected} armed={armed} onClicked={disarm} commentary={<Commentary state={state} connected={connected} />} />
+          <div className="min-h-0 overflow-hidden pt-2">
+            {panels.bottom ? (
+              <div className="relative grid h-[218px] animate-[fadein_0.3s_ease-out] grid-cols-[1fr_1fr_1.15fr] gap-2">
+                <Scopes state={state} push={push} />
+                <Console events={state?.events ?? []} error={state?.error ?? null} onClose={() => togglePanel("bottom")} />
+              </div>
+            ) : (
+              <button onClick={() => togglePanel("bottom")} className="panel group h-10 w-full !flex-row items-center gap-3 px-3.5 text-left transition-colors hover:border-line-2 hover:bg-panel-2" title="Open charts & log">
+                <PanelBottomOpen className="h-4 w-4 shrink-0 text-fg-3 group-hover:text-fg" />
+                <span className="shrink-0 text-[12.5px] font-medium text-fg-2 group-hover:text-fg">Charts & log</span>
+                {lastEvent && <span className="min-w-0 truncate text-[12px] text-fg-3">· {lastEvent}</span>}
+                <ChevronUp className="ml-auto h-4 w-4 shrink-0 text-fg-3 group-hover:text-fg" />
+              </button>
+            )}
           </div>
         </div>
 
-        <div inert={!panels.right} className={clsx("min-h-0 overflow-hidden transition-opacity duration-300", panels.right ? "pl-2 opacity-100" : "opacity-0")}>
-          <div className="h-full w-[300px]">
-            <Inspector state={state} push={push} onClose={() => togglePanel("right")} />
-          </div>
+        <div className="min-h-0 overflow-hidden pl-2">
+          {panels.right ? (
+            <div className="h-full w-[300px] animate-[fadein_0.3s_ease-out]">
+              <Inspector state={state} push={push} onClose={() => togglePanel("right")} />
+            </div>
+          ) : (
+            <Rail label="Readouts" icon={PanelRightOpen} onOpen={() => togglePanel("right")} />
+          )}
         </div>
       </div>
 
       <StatusBar state={state} connected={connected} />
 
       {seenIntro === false && <Intro onClose={() => setSeenIntro(true)} />}
-      {help && <Shortcuts onClose={() => setHelp(false)} />}
       <Toasts toasts={toasts} />
     </div>
+  );
+}
+
+/** A closed panel: a slim strip with its name; click to open. */
+function Rail({ label, icon: Icon, onOpen }: { label: string; icon: typeof Hand; onOpen: () => void }) {
+  return (
+    <button onClick={onOpen} title={`Open ${label.toLowerCase()}`} className="panel group h-full w-10 items-center gap-3 py-3 transition-colors hover:border-line-2 hover:bg-panel-2">
+      <Icon className="h-4 w-4 text-fg-3 group-hover:text-fg" />
+      <span className="text-[12.5px] font-medium text-fg-2 [writing-mode:vertical-rl] group-hover:text-fg">{label}</span>
+    </button>
   );
 }
 
@@ -152,13 +161,7 @@ function usePanels(): [Panels, (k: PanelKey) => void] {
   return [p, toggle];
 }
 
-const PANEL_BUTTONS: { k: PanelKey; label: string; key: string; icon: typeof Hand }[] = [
-  { k: "left", label: "Controls", key: "C", icon: PanelLeft },
-  { k: "right", label: "Readouts", key: "I", icon: PanelRight },
-  { k: "bottom", label: "Charts & log", key: "L", icon: PanelBottom },
-];
-
-function TopBar({ state, connected, act, setMode, panels, togglePanel, onHelp, onAbout }: { state: SimState | null; connected: boolean | null; act: (n: ActName) => void; setMode: (m: Mode) => void; panels: Panels; togglePanel: (k: PanelKey) => void; onHelp: () => void; onAbout: () => void }) {
+function TopBar({ state, act, setMode, onAbout }: { state: SimState | null; act: (n: ActName) => void; setMode: (m: Mode) => void; onAbout: () => void }) {
   const paused = state?.auto === false;
   return (
     <header className="panel !flex-row h-12 shrink-0 items-center gap-2.5 !overflow-visible px-2.5">
@@ -170,39 +173,23 @@ function TopBar({ state, connected, act, setMode, panels, togglePanel, onHelp, o
           <span className="rounded-full bg-model" />
         </div>
         <span className="text-[14px] font-semibold tracking-tight text-fg">Blindgrasp</span>
-        <span className={clsx("h-1.5 w-1.5 rounded-full", connected ? "bg-ok" : connected === false ? "bg-warn" : "bg-fg-3")} title={connected ? "connected" : "offline"} />
-      </div>
+              </div>
       <span className="h-5 w-px bg-line-2" />
       <select value={state?.mode ?? "script"} onChange={(e) => setMode(e.target.value as Mode)} className="field !w-[190px]" aria-label="Experiment">
         {EXPERIMENTS.map((e) => (
           <option key={e.mode} value={e.mode}>{e.title}</option>
         ))}
       </select>
-      <button onClick={() => act("auto")} className="tool tool-primary w-[84px] justify-center" title="Space">
+      <button onClick={() => act("auto")} className="tool tool-primary w-[84px] justify-center">
         {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
         {paused ? "Run" : "Pause"}
       </button>
-      <button onClick={() => act("reset")} className="tool" title="R">
+      <button onClick={() => act("reset")} className="tool">
         <RotateCcw className="h-3.5 w-3.5" /> Reset
       </button>
 
       <div className="ml-auto flex items-center gap-1.5">
-        <div className="flex h-[30px] items-center rounded-md border border-line-2 bg-black/25 p-0.5">
-          {PANEL_BUTTONS.map(({ k, label, key, icon: Icon }) => (
-            <button
-              key={k}
-              onClick={() => togglePanel(k)}
-              title={`${panels[k] ? "Hide" : "Show"} ${label.toLowerCase()} (${key})`}
-              aria-pressed={panels[k]}
-              className={clsx("flex h-full items-center gap-1.5 rounded-[5px] px-2.5 text-[12.5px] transition-colors", panels[k] ? "bg-white/[0.09] text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" : "text-fg-3 hover:text-fg-2")}
-            >
-              <Icon className="h-3.5 w-3.5" /> {label}
-            </button>
-          ))}
-        </div>
-        <span className="mx-1 h-5 w-px bg-line-2" />
         <button onClick={onAbout} className="tool !border-transparent !bg-transparent !shadow-none text-fg-2">About</button>
-        <button onClick={onHelp} className="tool !px-1.5" title="Shortcuts (?)"><CircleHelp className="h-3.5 w-3.5" /></button>
       </div>
     </header>
   );
@@ -217,7 +204,7 @@ function Sidebar({ state, push, armed, onArm, act, setMode, onClose }: { state: 
       <PanelHead title="Controls" onClose={onClose} />
       <div className="section-title !pt-3">Experiments</div>
       <nav className="flex flex-col px-1.5">
-        {EXPERIMENTS.map((e, i) => {
+        {EXPERIMENTS.map((e) => {
           const on = state?.mode === e.mode;
           const Icon = e.icon;
           return (
@@ -231,7 +218,6 @@ function Sidebar({ state, push, armed, onArm, act, setMode, onClose }: { state: 
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
                   <span className={clsx("text-[13px] font-medium", on ? "text-fg" : "text-fg-2 group-hover:text-fg")}>{e.title}</span>
-                  <span className="kbd ml-auto">{i + 1}</span>
                 </span>
                 <span className="block font-mono text-[10px] text-fg-3">{e.id}</span>
                 <span className="mt-0.5 block text-[11.5px] leading-snug text-fg-3">{e.blurb}</span>
@@ -249,24 +235,20 @@ function Sidebar({ state, push, armed, onArm, act, setMode, onClose }: { state: 
         <button onClick={onArm} className={clsx("tool justify-start", armed && "tool-touch")}>
           <Move className="h-3.5 w-3.5" />
           <span className="flex-1 text-left">{armed ? "Click an object in the view…" : "Move an object"}</span>
-          <span className="kbd">G</span>
         </button>
         <button onClick={() => act("friction")} className={clsx("tool justify-start", fr === "low" && "tool-on")}>
           <Snowflake className="h-3.5 w-3.5" />
           <span className="flex-1 text-left">Table friction</span>
           <span className="font-mono text-[10.5px] text-fg-2">{fr === "low" ? "icy" : fr === "high" ? "sticky" : "normal"}</span>
-          <span className="kbd">F</span>
         </button>
         <button onClick={() => act("mass")} className="tool justify-start">
           <Weight className="h-3.5 w-3.5" />
           <span className="flex-1 text-left">Puck mass</span>
           <span className="font-mono text-[10.5px] text-fg-2">{state?.mass ?? "normal"}</span>
-          <span className="kbd">M</span>
         </button>
         <button onClick={() => act("truth")} className={clsx("tool justify-start", state?.truth && "tool-on")}>
           <ScanEye className="h-3.5 w-3.5" />
           <span className="flex-1 text-left">Ground truth overlay</span>
-          <span className="kbd">T</span>
         </button>
       </div>
 
@@ -518,13 +500,13 @@ const TAGS: [RegExp, string, string][] = [
   [/map done|reached|finished/, "OK", "text-ok"],
 ];
 
-function Console({ events, error }: { events: string[]; error: string | null }) {
+function Console({ events, error, onClose }: { events: string[]; error: string | null; onClose: () => void }) {
   return (
     <section className="panel">
       <div className="panel-head">
         <span className="text-fg">Console</span>
         <span className="normal-case tracking-normal text-fg-3">event log · newest first</span>
-        <span className="ml-auto normal-case tracking-normal text-fg-3">{events.length}</span>
+        <button onClick={onClose} className="ml-auto text-fg-3 hover:text-fg" title="Hide charts & log" aria-label="Hide charts and log">✕</button>
       </div>
       <ol className="min-h-0 flex-1 overflow-y-auto bg-well py-1 font-mono text-[11px] leading-[18px]">
         {events.length === 0 && <li className="px-3 text-fg-3">— no events yet —</li>}
@@ -553,7 +535,7 @@ function StatusBar({ state, connected }: { state: SimState | null; connected: bo
     <footer className="flex h-7 shrink-0 items-center gap-4 overflow-hidden px-2 text-[11px] text-fg-3">
       <span className={clsx(connected ? "text-ok" : connected === false ? "text-warn" : "")}>{connected ? "● connected" : connected === false ? "● offline" : "● connecting"}</span>
       {state && <span>t = {state.t.toFixed(0)} s</span>}
-      <span className="ml-auto whitespace-nowrap">drag to orbit · ⌘/ctrl + scroll to zoom · ? for shortcuts</span>
+      <span className="ml-auto whitespace-nowrap">drag to orbit · ⌘/ctrl + scroll to zoom</span>
     </footer>
   );
 }
@@ -597,39 +579,11 @@ function Intro({ onClose }: { onClose: () => void }) {
         ))}
       </ol>
       <div className="mt-4 rounded-[3px] border border-line bg-well p-3 text-xs leading-relaxed text-fg-2">
-        <b className="text-fg">Where to look:</b> the status line above the camera explains what&apos;s happening right now. Pick an experiment at the top (start with <b className="text-fg">Guided demo</b>). When you want more, open <b className="text-fg">Controls</b>, <b className="text-fg">Readouts</b> or <b className="text-fg">Charts &amp; log</b> from the top bar.
+        <b className="text-fg">Where to look:</b> the status line above the camera explains what&apos;s happening right now. Pick an experiment at the top (start with <b className="text-fg">Guided demo</b>). When you want more, click the closed <b className="text-fg">Controls</b>, <b className="text-fg">Readouts</b> or <b className="text-fg">Charts &amp; log</b> panels at the edges.
       </div>
       <div className="mt-4 flex justify-end">
         <button onClick={onClose} className="tool tool-on">Open the workstation</button>
       </div>
-    </Modal>
-  );
-}
-
-function Shortcuts({ onClose }: { onClose: () => void }) {
-  const rows: [string, string][] = [
-    ["C / I / L", "show or hide controls / readouts / charts & log"],
-    ["Space", "run / pause"],
-    ["R", "reset the run"],
-    ["1 – 4", "load an experiment"],
-    ["G", "move an object (then click it, then click the table)"],
-    ["F", "table friction: normal → icy → sticky"],
-    ["M", "puck mass"],
-    ["T", "ground-truth overlay"],
-    ["drag", "orbit the camera"],
-    ["⌘/Ctrl + scroll", "zoom"],
-    ["Esc", "cancel / close"],
-  ];
-  return (
-    <Modal title="Keyboard & mouse" onClose={onClose}>
-      <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2">
-        {rows.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt><span className="kbd !h-5 !px-1.5 !text-[10.5px]">{k}</span></dt>
-            <dd className="text-[12.5px] text-fg-2">{v}</dd>
-          </div>
-        ))}
-      </dl>
     </Modal>
   );
 }

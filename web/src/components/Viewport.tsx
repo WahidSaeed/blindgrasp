@@ -173,7 +173,7 @@ export function Viewport({ state, connected, armed, onClicked, commentary }: Pro
           {(armed || sel) && (
             <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
               <div className="rounded-full bg-black/60 px-3.5 py-1.5 text-xs font-medium text-[#ffc56b] ring-1 ring-touch/50 backdrop-blur-md">
-                {sel ? <>▸ {sel} picked up — click where it should go on the table · Esc to cancel</> : <>▸ click a box, the red puck or the green goal</>}
+                {sel ? <>▸ {sel} picked up — click where it should go on the table</> : <>▸ click a box, the red puck or the green goal</>}
               </div>
             </div>
           )}
@@ -181,7 +181,7 @@ export function Viewport({ state, connected, armed, onClicked, commentary }: Pro
           {state && !state.auto && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/40">
               <div className="flex items-center gap-2 rounded-full bg-black/60 px-4 py-2 text-xs font-medium ring-1 ring-white/15 backdrop-blur-md">
-                <Pause className="h-3.5 w-3.5" /> PAUSED — press Space
+                <Pause className="h-3.5 w-3.5" /> Paused
               </div>
             </div>
           )}
