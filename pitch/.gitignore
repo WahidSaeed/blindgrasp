@@ -1,0 +1,10 @@
+*.mp4
+*.wav
+*.mp3
+*.jpg
+*.png
+footage/
+work/
+film/node_modules/
+film/out/
+film/public/

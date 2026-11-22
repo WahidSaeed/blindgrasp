@@ -1,0 +1,62 @@
+[
+ {
+  "f": 44,
+  "cm": 22.6,
+  "icy": false,
+  "surprise": false
+ },
+ {
+  "f": 85,
+  "cm": 19.19,
+  "icy": false,
+  "surprise": false
+ },
+ {
+  "f": 124,
+  "cm": 15.92,
+  "icy": false,
+  "surprise": false
+ },
+ {
+  "f": 274,
+  "cm": 12.42,
+  "icy": false,
+  "surprise": false
+ },
+ {
+  "f": 367,
+  "cm": 7.85,
+  "icy": false,
+  "surprise": false
+ },
+ {
+  "f": 469,
+  "cm": 3.26,
+  "icy": false,
+  "surprise": false
+ },
+ {
+  "f": 588,
+  "cm": 0.6,
+  "icy": false,
+  "surprise": false
+ },
+ {
+  "f": 698,
+  "cm": 13.69,
+  "icy": true,
+  "surprise": true
+ },
+ {
+  "f": 737,
+  "cm": 4.55,
+  "icy": true,
+  "surprise": false
+ },
+ {
+  "f": 766,
+  "cm": 1.56,
+  "icy": true,
+  "surprise": false
+ }
+]
