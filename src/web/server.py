@@ -56,6 +56,13 @@ class App:
         self.jpeg: bytes | None = None
         self.frame_id = 0
         self.allowed_origins: set[str] = {"*"}
+        # Idle when nobody is watching: no open video stream and no /state poll for IDLE_AFTER seconds.
+        # Saves CPU and hosted TabPFN tokens on a shared server; the run resumes where it left off.
+        self.viewers = 0
+        self.viewer_lock = threading.Lock()
+        self.last_seen = time.monotonic()
+        self.idle_after = float(os.environ.get("IDLE_AFTER", "60"))
+        self.idle = False
         self.state_lock = threading.Lock()
         self.state: dict = {}
         self.stop = threading.Event()
@@ -203,6 +210,13 @@ class App:
         last_metric_t = 0.0
         while not self.stop.is_set():
             t0 = time.perf_counter()
+            idle = self.viewers == 0 and time.monotonic() - self.last_seen > self.idle_after
+            if idle != self.idle:
+                self.idle = idle
+                print("idle: nobody watching, simulation paused" if idle else "viewer connected, simulation resumed", flush=True)
+            if idle:
+                time.sleep(0.25)
+                continue
             while not self.actions.empty():
                 self._apply(self.actions.get())
 
@@ -241,7 +255,8 @@ class App:
                 self.truth = self.tm.truth_grid(self.sim)
                 last_metric_t = time.perf_counter()
 
-            self._render()
+            if self.viewers > 0 or self.jpeg is None:
+                self._render()
             self._publish_state()
             time.sleep(max(0.0, frame_dt - (time.perf_counter() - t0)))
 
@@ -345,6 +360,7 @@ def make_handler(app: App):
             if self.path in ("/", "/index.html"):
                 self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
             elif self.path == "/state":
+                app.last_seen = time.monotonic()
                 self._send(200, json.dumps(app.snapshot()).encode(), "application/json")
             elif self.path.startswith("/stream"):
                 self.send_response(200)
@@ -353,6 +369,9 @@ def make_handler(app: App):
                 self._cors()
                 self.end_headers()
                 last = -1
+                with app.viewer_lock:
+                    app.viewers += 1
+                app.last_seen = time.monotonic()
                 try:
                     while not app.stop.is_set():
                         with app.frame_cv:
@@ -364,12 +383,17 @@ def make_handler(app: App):
                                          + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n")
                 except (BrokenPipeError, ConnectionResetError):
                     pass
+                finally:
+                    with app.viewer_lock:
+                        app.viewers -= 1
+                    app.last_seen = time.monotonic()
             else:
                 self._send(404, b"not found", "text/plain")
 
         def do_POST(self):
             if self.path != "/action":
                 return self._send(404, b"not found", "text/plain")
+            app.last_seen = time.monotonic()
             n = int(self.headers.get("Content-Length", 0))
             try:
                 a = json.loads(self.rfile.read(n) or b"{}")
