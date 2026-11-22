@@ -38,12 +38,6 @@ docker run -d --name web --network bg --restart unless-stopped blindgrasp-web
 mkdir -p /etc/caddy
 cat > /etc/caddy/Caddyfile <<CADDY
 $HOST {
-  encode {
-    gzip
-    match {
-      not header Content-Type multipart/*
-    }
-  }
   @sim path /state /action /stream*
   reverse_proxy @sim sim:8000 {
     flush_interval -1
