@@ -16,6 +16,7 @@ import argparse
 import io
 import os
 import json
+import mimetypes
 import queue
 import threading
 import time
@@ -37,6 +38,21 @@ from src.sim.env import Sim
 from src.viz.overlay import Overlay
 
 STATIC = Path(__file__).resolve().parent / "static"
+# The Next.js UI as a static export (cd web && npm run build -> web/out). If present it is served at "/", so the UI
+# and this server share one origin; otherwise the old single-file page in static/ is served.
+WEB_OUT = Path(os.environ.get("WEB_OUT", Path(__file__).resolve().parents[2] / "web" / "out")).resolve()
+
+
+def web_file(url_path: str) -> Path | None:
+    """Map a URL path to a file in WEB_OUT (/, /x -> x.html or x/index.html). None if missing or outside WEB_OUT."""
+    if not WEB_OUT.is_dir():
+        return None
+    rel = url_path.split("?", 1)[0].split("#", 1)[0].lstrip("/") or "index.html"
+    for cand in (rel, rel + ".html", rel.rstrip("/") + "/index.html"):
+        f = (WEB_OUT / cand).resolve()
+        if f.is_file() and f.is_relative_to(WEB_OUT):
+            return f
+    return None
 SELECTABLE = ("box_a", "box_b", "box_c", "puck", "goal")
 HALF_HEIGHT = {"box_a": 0.04, "box_b": 0.03, "box_c": 0.06, "puck": 0.02}
 
@@ -357,9 +373,7 @@ def make_handler(app: App):
             self.end_headers()
 
         def do_GET(self):
-            if self.path in ("/", "/index.html"):
-                self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
-            elif self.path == "/state":
+            if self.path.split("?")[0] == "/state":
                 app.last_seen = time.monotonic()
                 self._send(200, json.dumps(app.snapshot()).encode(), "application/json")
             elif self.path.startswith("/stream"):
@@ -387,8 +401,16 @@ def make_handler(app: App):
                     with app.viewer_lock:
                         app.viewers -= 1
                     app.last_seen = time.monotonic()
+            elif (f := web_file(self.path)) is not None:
+                ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+                if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
+                    ctype += "; charset=utf-8"
+                self._send(200, f.read_bytes(), ctype)
+            elif self.path in ("/", "/index.html"):
+                self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
             else:
-                self._send(404, b"not found", "text/plain")
+                f404 = web_file("/404.html")
+                self._send(404, f404.read_bytes() if f404 else b"not found", "text/html; charset=utf-8" if f404 else "text/plain")
 
         def do_POST(self):
             if self.path != "/action":

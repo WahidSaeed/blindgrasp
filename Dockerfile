@@ -1,4 +1,15 @@
-# Blindgrasp sim server (MuJoCo + hosted TabPFN). The Next.js UI in web/ is deployed separately (Vercel).
+# Blindgrasp: sim server (MuJoCo + hosted TabPFN) that also serves the Next.js UI as static files, on one port.
+
+# 1) Build the UI as a static export. Same origin as the server, so NEXT_PUBLIC_SIM_URL stays empty.
+FROM node:22-alpine AS ui
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+ENV NEXT_PUBLIC_SIM_URL="" NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# 2) Python sim server.
 FROM python:3.12-slim
 
 # Headless MuJoCo rendering via OSMesa (CPU, no GPU or display needed); git to fetch the robot model.
@@ -19,6 +30,7 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/google-deepmin
 
 COPY assets assets
 COPY src src
+COPY --from=ui /web/out web/out
 
 # TABPFN_TOKEN comes from the platform's secret env vars, never from the image.
 RUN useradd --create-home app && chown -R app /app

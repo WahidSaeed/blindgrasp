@@ -3,7 +3,9 @@
 .env.*
 !.env.example
 .venv
-web
+web/node_modules
+web/.next
+web/out
 eval
 bench
 mujoco_menagerie
