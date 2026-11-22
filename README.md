@@ -120,5 +120,5 @@ static export (`web/out`) and the Python server serves it next to `/state`, `/ac
 instance's default address (`http://ec2-<ip>.<region>.compute.amazonaws.com`, plain HTTP, same origin). `user-data.sh`
 installs Docker and a `blindgrasp` boot service that runs `start.sh` (pull, build, run). The instance role reads
 `/blindgrasp/TABPFN_TOKEN` (SecureString) and `/blindgrasp/ALLOWED_ORIGINS` from SSM Parameter Store; no SSH, use Session
-Manager. After changing a parameter or pushing code: `sudo systemctl restart blindgrasp`. The simulation pauses when nobody
+Manager. After changing a parameter or pushing code, run `deploy/aws/redeploy.sh` on your machine (it restarts the service on the instance via SSM). The simulation pauses when nobody
 is watching (`IDLE_AFTER`, default 60 s) to save CPU and TabPFN tokens.
