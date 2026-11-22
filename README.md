@@ -4,9 +4,62 @@ A blind Franka Panda arm in MuJoCo maps its table by touch, then pushes a puck t
 boxes it found. TabPFN is the only learner and never takes a gradient step: every probe and every push is
 a new row in its context. See `Build Plan.md` for the full plan.
 
-- **Live demo:** http://ec2-63-190-61-111.eu-central-1.compute.amazonaws.com (AWS EC2; one shared simulation, pauses when
-  nobody watches; may be offline after the hackathon).
-- **Pitch video (2:35):** `pitch/Blindgrasp_pitch_v1.mp4` (not in git; see [Pitch video](#pitch-video)).
+<p align="center"><img src="docs/media/mapping.gif" width="640" alt="The arm maps the table by touch; tiles are TabPFN's predicted heights"></p>
+
+## The story
+
+**Robots can't always see.** Dust, darkness or their own gripper block the camera. Blindgrasp asks what a robot can
+do with touch alone: a Franka Panda in MuJoCo with no camera, whose only sense is a probe that touches the table and
+reports a height.
+
+**1. Map the table by touch.** Every touch becomes one row in TabPFN's context (`x, y, height`). TabPFN is a foundation
+model for tables: it never trains, so the very next prediction already uses the new row. Its 10-90% band says where the
+map is unsure, and the arm always touches the least certain spot next. Within a few dozen touches the boxes appear.
+
+<p align="center"><img src="docs/media/map.png" width="720" alt="Touch map after 25 probes"></p>
+
+**2. The world changes.** A presenter moves a box onto the puck's route. The map still says the route is clear; a map
+is only as fresh as its last touch. So before every push the arm touches a few spots on the route, feels something
+12 cm tall where the map said empty, re-touches an old spot to make sure it is a real change and not noise, drops the
+stale rows and plans around the box.
+
+<p align="center"><img src="docs/media/route_check.gif" width="640" alt="Route check: the probe finds the moved box"></p>
+
+**3. Push the puck to the goal, in a few tries.** Pushing is learned the same way: each strike (direction, speed,
+where the puck stopped) is one more row. Then the table turns icy. The first push overshoots, the prediction misses by
+10 cm, the robot treats that as a physics change, drops its old pushes and is back on target two pushes later.
+
+<p align="center"><img src="docs/media/icy_push.gif" width="640" alt="Icy table: overshoot, then back on target"></p>
+
+**4. Watch it live in the browser.** A lab-workstation UI streams the simulation and lets you run the experiments,
+move objects, change the table's friction and follow the map, the charts and the event log.
+
+<p align="center"><img src="docs/media/ui.png" width="900" alt="Blindgrasp web UI with all panels open"></p>
+
+## Evaluation
+
+Measured with the scripts under `eval/` (3 seeds each; numbers and plots in `eval/out/`, copies in `docs/eval/`).
+
+<p align="center"><img src="docs/eval/summary.png" width="900" alt="Height error: TabPFN 0.62 cm, kNN 0.62, GP 0.83. Median pushes: TabPFN 4 vs GP 5, after icy 2.5 vs 3"></p>
+
+- **Mapping (80 touches):** TabPFN's height error (0.62 cm) beats the Gaussian process (0.83 cm) and ties nearest
+  neighbours. Each touch is accurate to about 1 mm.
+- **Pushing:** TabPFN reaches the goal in a median of 4 pushes from an empty context (GP 5), and 2.5 after the table
+  turns icy (GP 3). All 9 + 6 goals were reached.
+- **The limit:** box outlines (occupancy IoU) are no better than the GP's. With 80 touches every learner sits near the
+  same ceiling: the number of touches, not the learner, is the limit.
+
+| Map error and box outlines vs touches | After a box is moved (red line) |
+|---|---|
+| <img src="docs/eval/map_tabpfn_vs_baselines.png" alt="Map error and IoU vs probes for TabPFN, GP, kNN"> | <img src="docs/eval/map_recovery_tabpfn.png" alt="Recovery after a box is moved at probe 40"> |
+
+| Change detection on the icy table | Is the uncertainty band honest? |
+|---|---|
+| <img src="docs/eval/push_icy_misses.png" alt="Prediction miss spikes when the table turns icy; resetting the context recovers in 2 pushes"> | <img src="docs/eval/calibration.png" alt="Share of outcomes below, inside and above the 10-90% band"> |
+
+Resetting the push context on a detected change brings the prediction miss back down within 2 pushes; keeping the old
+pushes takes 5-8. The 10-90% bands hold 73-83% of outcomes (ideal: 80%) for both learners, so "least certain" is a fair
+guide for where to touch next.
 
 ## Setup
 
@@ -38,8 +91,8 @@ cd web && npm install && npm run dev                                 # UI on htt
 
 Open http://localhost:3000. The UI talks to the sim server at `NEXT_PUBLIC_SIM_URL` (default
 `http://127.0.0.1:8000`); it reconnects on its own if the server restarts. If a static export of the UI exists
-(`cd web && npm run build` -> `web/out`), the sim server also serves it at http://127.0.0.1:8000 (same origin, as in the
-Docker image); otherwise it serves the old single-file page there.
+(`cd web && npm run build` -> `web/out`), the sim server also serves it at http://127.0.0.1:8000; otherwise it serves
+the old single-file page there.
 
 | `--mode`   | What it shows |
 |------------|---------------|
@@ -72,7 +125,9 @@ browser viewer is the main one.
 .venv/bin/python -m eval.push_eval --learners tabpfn gp knn --adapt reset window none --seeds 10
 ```
 
-Outputs go to `bench/out/` and `eval/out/` (tables, JSON, plots).
+Outputs go to `bench/out/` and `eval/out/` (tables, JSON, plots). `python -m eval.summary_chart` redraws the README chart;
+`python -m eval.render_clips --mode script|map|push --clean --views front,hero` renders MP4s offline (deterministic per
+seed; use `BLINDGRASP_BACKEND=local` to keep hosted TabPFN tokens).
 
 ## Layout
 
@@ -86,9 +141,9 @@ src/demos/     touch_map.py (Act 1), push.py (Act 2), combined.py (1 + 2), scrip
 src/viz/       overlay.py (map tiles, probe dots, push path)
 src/web/       server.py (sim server: MJPEG /stream, /state, /action; serves web/out if built) + static/index.html
 web/           Next.js UI (src/components/Dashboard.tsx, Viewport.tsx, LineChart.tsx; src/lib/sim.ts = API client)
-bench/ eval/   latency benchmark, Phase 1 acceptance, map and push evaluations, render_clips.py (offline MP4s)
-deploy/aws/    EC2 boot scripts (user-data.sh, start.sh) and redeploy.sh
-pitch/         pitch video: voiceover script, Remotion film (pitch/film), UI capture script
+bench/ eval/   latency benchmark, Phase 1 acceptance, map and push evaluations, render_clips.py (offline MP4s),
+               summary_chart.py (docs/eval/summary.png)
+docs/          README screenshots, GIFs and evaluation charts
 ```
 
 ## Findings so far (see the build plan for targets)
@@ -114,51 +169,3 @@ pitch/         pitch video: voiceover script, Remotion film (pitch/film), UI cap
   puck's stopping distance doesn't depend on mass. Use the icy table as the Act 2 interrupt.
 - Pushing, 3 seeds (9 goals): TabPFN reaches goals in a median of 4 pushes from an empty context (GP 5), 2-3 after the
   table turns icy. The single-goal push demo (`--mode push`) has a longer first shot (~22 cm) and takes 6-7.
-- Headless servers render in software (OSMesa): shadows cost ~2/3 of each frame, so they are off there
-  (`RENDER_SHADOWS=1` turns them back on), and the simulation steps by elapsed wall time, so slow rendering lowers
-  the frame rate but not the simulation speed.
-
-## Deploy (AWS EC2, hosted TabPFN)
-
-`deploy/aws/` runs everything as one container on an EC2 instance (Amazon Linux 2023, currently a c7i.xlarge in
-eu-central-1; a t3.small ran the simulation 8x too slow). The `Dockerfile` builds the UI as a static export (`web/out`) and
-a slim Python image (no PyTorch, no local weights, `BLINDGRASP_BACKEND=hosted`, headless MuJoCo via OSMesa, Menagerie Panda
-pinned); the sim server serves the UI next to `/state`, `/action` and `/stream` on port 80 at the instance's default
-address (`http://ec2-<ip>.<region>.compute.amazonaws.com`, plain HTTP, same origin).
-
-- `user-data.sh` installs Docker and a `blindgrasp` boot service that runs `start.sh` (pull, build, run; adds 2 GB swap
-  for the build). Video: `WIDTH=960 HEIGHT=600 FPS=15 SPEED=2` (about 10 fps in practice).
-- The instance role reads `/blindgrasp/TABPFN_TOKEN` (SecureString) and `/blindgrasp/ALLOWED_ORIGINS` from SSM Parameter
-  Store. Only port 80 is open; no SSH (use Session Manager).
-- After pushing code or changing a parameter: run `deploy/aws/redeploy.sh` on your machine (restarts the service on the
-  instance via SSM).
-- One simulation is shared by everyone who opens the page, and so is the hosted TabPFN daily token cap (5M tokens,
-  resets 00:00 UTC). When TabPFN fails the server switches to the GP. The simulation pauses when nobody is watching
-  (`IDLE_AFTER`, default 60 s) to save CPU and tokens.
-- Cost: the instance is billed per hour (c7i.xlarge about $0.20/h) plus the Elastic IP; stop or terminate it when done.
-
-### Render + Vercel (not used)
-
-`render.yaml` (Render free plan) and a Vercel UI (root `web/`, `NEXT_PUBLIC_SIM_URL` = the server URL, `ALLOWED_ORIGINS`
-on the server = the Vercel URL) also work in principle, but the free plan's 512 MB limit kills the server (OSMesa pushes
-it past 512 MB on Linux).
-
-## Pitch video
-
-`pitch/script.md` has the voiceover script (`pitch/vo_elevenlabs.txt`, generated with ElevenLabs), the shot plan and
-where every number comes from. `pitch/film` is a Remotion project: each scene is timed from the voiceover's word
-timestamps (`src/words.json`), with hand-split captions checked against the transcript.
-
-```bash
-# footage (local TabPFN; deterministic for a given seed). --views writes one MP4 per camera, --events a per-frame log
-BLINDGRASP_BACKEND=local .venv/bin/python -m eval.render_clips --mode script --learner tabpfn --speed 3 --max-sim 200 \
-    --width 1920 --height 1080 --clean --views front,hero,top --events pitch/footage/script2.json --out pitch/footage/script2.mp4
-BLINDGRASP_BACKEND=local .venv/bin/python -m eval.render_clips --mode push --learner tabpfn --speed 3 \
-    --width 1920 --height 1080 --clean --views hero,front --events pitch/footage/push.json --out pitch/footage/push.mp4
-node pitch/ui_capture.mjs pitch/footage/ui        # screencast of the web UI (needs both servers running)
-cd pitch/film && npm install && ./render.sh blindgrasp_pitch   # -> out/blindgrasp_pitch.mp4, -14 LUFS
-```
-
-The footage, voiceover and rendered video are not in git (`pitch/.gitignore`); link them into `pitch/film/public/`
-before rendering. The TabPFN scene in the film is an illustration drawn in code (labelled as such); the robot shots are
-real renders. Music is synthesized by `pitch/film/audio/music.py`.
