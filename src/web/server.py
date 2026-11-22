@@ -215,6 +215,9 @@ class App:
     def _run(self) -> None:
         self.sim = Sim()
         self.renderer = mujoco.Renderer(self.sim.model, self.height, self.width, max_geom=10000)
+        # Software GL (headless servers, MUJOCO_GL=osmesa) spends ~2/3 of each frame on shadows; skip them there.
+        if os.environ.get("RENDER_SHADOWS", "0" if os.environ.get("MUJOCO_GL") == "osmesa" else "1") == "0":
+            self.renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 0
         self.vopt = mujoco.MjvOption()
         self.cam = mujoco.MjvCamera()
         self._set_view("front")
@@ -224,19 +227,24 @@ class App:
         dt = self.sim.model.opt.timestep
         frame_dt = 1.0 / self.fps
         last_metric_t = 0.0
+        last_tick = time.perf_counter()
         while not self.stop.is_set():
             t0 = time.perf_counter()
+            # Advance by the wall time that actually passed (not one nominal frame), so slow rendering lowers the
+            # frame rate but not the simulation speed. Capped so a stall doesn't cause a huge jump.
+            elapsed, last_tick = min(t0 - last_tick, 4 * frame_dt), t0
             idle = self.viewers == 0 and time.monotonic() - self.last_seen > self.idle_after
             if idle != self.idle:
                 self.idle = idle
                 print("idle: nobody watching, simulation paused" if idle else "viewer connected, simulation resumed", flush=True)
             if idle:
                 time.sleep(0.25)
+                last_tick = time.perf_counter()
                 continue
             while not self.actions.empty():
                 self._apply(self.actions.get())
 
-            n_steps = max(1, round(self.speed * frame_dt / dt))
+            n_steps = max(1, round(self.speed * elapsed / dt))
             for _ in range(n_steps):
                 if self.auto and self.task is None:
                     self.task = {"push": lambda: pushing_task(self.sim, self.agent, self.ui),
