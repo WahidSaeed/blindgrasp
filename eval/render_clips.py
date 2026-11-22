@@ -76,12 +76,14 @@ def main() -> None:
             sim.place(b, 0.20, 0.15 if i == 0 else -0.15, 0.04 if i == 0 else 0.06)
         sim.place("box_b", 0.68, 0.37, 0.03)
         sim.place("puck", 0.42, -0.05, 0.02)
+        ui["puck_told"] = (0.42, -0.05)
         sim.set_goal_xy(0.60, 0.10)
         task = pushing_task(sim, agent, ui)
     elif args.mode == "map":
         task = mapping_task(sim, tm, ui)
     elif args.mode == "combined":
         sim.place("puck", 0.45, 0.0, 0.02)
+        ui["puck_told"] = (0.45, 0.0)
         sim.set_goal_xy(0.66, 0.05)
         task = combined_task(sim, tm, agent, ui)
     else:
@@ -164,6 +166,9 @@ def main() -> None:
                             next_target=ui["next"], mask=tm.mask, clear=False)
                 if plan is not None and plan[1] is not None:
                     ov.draw(renderer.scene, path=[tuple(plan[0]), tuple(plan[1])], path_ok=not plan[2], clear=False)
+                b = ui.get("belief")
+                ov.draw(renderer.scene, probes=ui.get("search_pts", []), clear=False,
+                        puck=b.xy if b is not None and b.known else None)
                 return renderer.render()
             stats = f"{args.learner} | probes {tm.n} | pushes {len(ui['pushes'])} | sim {sim.t:5.0f}s"
             if ui["pushes"]:

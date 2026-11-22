@@ -72,11 +72,11 @@ def collect_pushes(seed):
         centre = np.array([0.46, 0.0]) - puck
         angle = np.arctan2(centre[1], centre[0]) + rng.normal(0, 1.2)   # roughly back towards the middle
         f = (rng.uniform(*OFFSET_RANGE), rng.uniform(*DIST_RANGE), rng.uniform(*SPEED_RANGE))
-        r = run(sim, push(sim, angle, *f))
+        r = run(sim, push(sim, angle, *f, puck))   # oracle data collection: true positions
         if not r.ok:
             continue
         X.append(f)
-        Y.append(r.d_push)
+        Y.append(r.true_d_push)
     return np.array(X), np.array(Y)
 
 

@@ -20,6 +20,10 @@ export interface PushPoint {
   miss_cm: number | null;
   spread_cm: number | null;
   change: boolean;
+  /** touches it took to find the puck after this push */
+  search_touches?: number;
+  /** distance between the touch estimate and the simulator's true position (a check; the robot never sees it) */
+  true_err_cm?: number | null;
 }
 
 export interface SimState {

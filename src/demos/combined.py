@@ -13,9 +13,10 @@ from __future__ import annotations
 import numpy as np
 from scipy.ndimage import maximum_filter
 
-from src.demos.push import GOAL_TOL, PushAgent
+from src.demos.puck_search import LOW_HOVER, PUCK_H, PuckBelief, take_told
+from src.demos.push import GOAL_TOL, PushAgent, execute_push
 from src.demos.touch_map import OCCUPIED, TouchMap
-from src.sim.env import PUCK_R, in_workspace
+from src.sim.env import PUCK_R, SAFE_Z, in_workspace
 
 MAP_PROBES = 45
 BAND_DONE = 0.012
@@ -70,10 +71,33 @@ def route_samples(puck: np.ndarray, angle: float, end: np.ndarray | None) -> np.
     return np.array([puck + t * u + o * n for t in ts for o in (0.0, -PUCK_R, PUCK_R)]).reshape(-1, 2)
 
 
-def combined_task(sim, tm: TouchMap, agent: PushAgent, ui: dict):
-    from src.sim.primitives import probe_down, push, wait
+def search_hover(tm: TouchMap, centre, radius: float = 0.18) -> float:
+    """Hover low between puck-search touches only if neither a touch nor the map shows anything taller than the puck
+    within `radius` of the search area (the arm moves sideways at that height)."""
+    centre = np.asarray(centre, float)
+    X, y = tm.table.arrays()
+    if len(X) and np.any((y > PUCK_H[1]) & (np.linalg.norm(X - centre[None], axis=1) < radius)):
+        return SAFE_Z
+    pr = tm.prediction()
+    if pr is not None:
+        gx, gy = np.meshgrid(tm.xs, tm.ys)
+        near = np.hypot(gx - centre[0], gy - centre[1]) < radius
+        if np.any(pr[1][near] > PUCK_H[1]):
+            return SAFE_Z
+    return LOW_HOVER
 
-    agent.blocked = make_blocked(tm, lambda: sim.puck_pose()[0])
+
+def combined_task(sim, tm: TouchMap, agent: PushAgent, ui: dict):
+    from src.sim.primitives import probe_down, wait
+
+    # Where the puck is comes from being told (start of the task, a person placing it) and from touch, never from
+    # the simulator.
+    belief = ui.setdefault("belief", PuckBelief())
+    ui.setdefault("search_pts", [])
+    take_told(ui, belief)
+    far = np.array([9.0, 9.0])
+    puck_now = lambda: belief.xy if belief.xy is not None else far  # noqa: E731
+    agent.blocked = make_blocked(tm, puck_now)
 
     # ---- Act 1: map (switch to pushing only between probes, with the arm at safe height) -------------
     ui["phase"] = "MAP"
@@ -85,13 +109,14 @@ def combined_task(sim, tm: TouchMap, agent: PushAgent, ui: dict):
             while tm.service.busy() or tm.update():
                 yield
             break
-        puck_xy = sim.puck_pose()[0]
+        take_told(ui, belief)
+        puck_xy = puck_now()
         tm.avoid = [(float(puck_xy[0]), float(puck_xy[1]), PROBE_CLEAR)]
         target = tm.next_target(sim.ctl.tip_pos())
         ui["next"] = target
         res = yield from probe_down(sim, *target)
-        # The puck is tracked separately (we push it, so we know where it is): touches on it are not table data.
-        if res.contact and np.linalg.norm(np.array([res.x, res.y]) - sim.puck_pose()[0]) > PUCK_R + 0.012:
+        # Touches where the robot believes the puck is are not table data.
+        if res.contact and np.linalg.norm(np.array([res.x, res.y]) - puck_now()) > PUCK_R + 0.012:
             tm.add_probe(res.x, res.y, res.height, sim.t)
             ui["probes"].append((res.x, res.y, res.height, res.height > OCCUPIED))
         else:
@@ -104,7 +129,12 @@ def combined_task(sim, tm: TouchMap, agent: PushAgent, ui: dict):
     ui["phase"] = "PUSH"
     checked: list[tuple[float, float]] = []   # spots touched during the push phase (the route is verified there)
     while True:
-        puck, _ = sim.puck_pose()
+        take_told(ui, belief)
+        if not belief.known:
+            ui["plan"], ui["status"] = None, "lost the puck - click it, then the table, to tell the robot where it is"
+            yield
+            continue
+        puck = belief.xy.copy()
         goal = sim.goal_xy()
         if np.linalg.norm(puck - goal) <= GOAL_TOL:
             ui["plan"], ui["status"] = None, "at goal - move the goal marker"
@@ -133,7 +163,7 @@ def combined_task(sim, tm: TouchMap, agent: PushAgent, ui: dict):
             ui["next"] = (float(q[0]), float(q[1]))
             res = yield from probe_down(sim, *q)
             checked.append((float(q[0]), float(q[1])))
-            if res.contact and np.linalg.norm(np.array([res.x, res.y]) - sim.puck_pose()[0]) > PUCK_R + 0.012:
+            if res.contact and np.linalg.norm(np.array([res.x, res.y]) - puck_now()) > PUCK_R + 0.012:
                 ev_p = tm.add_probe(res.x, res.y, res.height, sim.t)
                 ui["probes"].append((res.x, res.y, res.height, res.height > OCCUPIED))
                 if res.height > OCCUPIED:
@@ -149,28 +179,24 @@ def combined_task(sim, tm: TouchMap, agent: PushAgent, ui: dict):
         # Only the first ROUTE_MAX unchecked spots (nearest the puck: samples are ordered along the path) are
         # touched before each push. Re-planning until the whole route was checked never ended: early pushes have
         # random aim, so each re-plan brought a new route with new unchecked spots.
-        ui["status"] = "seed push (random)" if p.random else "pushing"
-        r = yield from push(sim, p.angle, p.offset, p.distance, p.speed)
-        ev = agent.observe(p, r.d_push[0], r.d_push[1], r.end_xy, goal)
-        ui["pushes"].append({"n": ev.n + 1, "goal_cm": ev.goal_err * 100,
-                             "miss_cm": None if ev.miss is None else ev.miss * 100,
-                             "spread_cm": None if ev.spread is None else ev.spread * 100, "change": ev.change})
-        ui["plan"] = None
-        if ev.change:
+        u = np.array([np.cos(p.angle), np.sin(p.angle)])
+        centre = p.predicted_end if p.predicted_end is not None else puck + u * 0.08
+        r, ev, srch = yield from execute_push(sim, agent, p, belief, goal, ui, hover=search_hover(tm, centre))
+        if ev is not None and ev.change:
             # The puck didn't go where we thought: maybe it hit something unmapped. Re-touch along its path.
             ui["log"].append(f"push {ev.n + 1}: puck missed its prediction by {ev.miss*100:.1f} cm - "
                              f"re-mapping {REMAP_PROBES} spots along its path")
             ui["phase"] = "MAP"
-            start, end = np.asarray(r.start_xy), np.asarray(r.end_xy)
+            start, end = np.asarray(r.start_xy), belief.xy.copy()
             for t in np.linspace(0.3, 1.0, REMAP_PROBES):
                 x, y = start + t * (end - start) + np.array([0.0, 0.0])
                 if not in_workspace(x, y):
                     continue
-                if np.linalg.norm(np.array([x, y]) - sim.puck_pose()[0]) < PROBE_CLEAR:
+                if np.linalg.norm(np.array([x, y]) - puck_now()) < PROBE_CLEAR:
                     continue  # don't probe the puck itself
                 ui["next"] = (x, y)
                 res = yield from probe_down(sim, x, y)
-                if res.contact and np.linalg.norm(np.array([res.x, res.y]) - sim.puck_pose()[0]) > PUCK_R + 0.012:
+                if res.contact and np.linalg.norm(np.array([res.x, res.y]) - puck_now()) > PUCK_R + 0.012:
                     tm.add_probe(res.x, res.y, res.height, sim.t)
                     ui["probes"].append((res.x, res.y, res.height, res.height > OCCUPIED))
                 tm.update()

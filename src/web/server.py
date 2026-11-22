@@ -111,6 +111,7 @@ class App:
             self.sim.place("box_c", 0.20, -0.15, 0.06)
             self.sim.place("box_b", 0.68, 0.37, 0.03)
             self.sim.place("puck", 0.42, -0.05, 0.02)
+            self.ui["puck_told"] = (0.42, -0.05)   # the task says where the puck starts; then it's found by touch
             self.sim.set_goal_xy(0.60, 0.10)
             self.agent = PushAgent(self.learner, self.adapt, learner_kwargs=lk)
         elif self.mode == "script":
@@ -119,6 +120,7 @@ class App:
             self.agent = PushAgent(self.learner, self.adapt, seed=SCRIPT_SEED, learner_kwargs=lk)
         elif self.mode == "combined":
             self.sim.place("puck", 0.45, 0.0, 0.02)
+            self.ui["puck_told"] = (0.45, 0.0)
             self.sim.set_goal_xy(0.66, 0.05)
             self.agent = PushAgent(self.learner, self.adapt, learner_kwargs=lk)
         what = {"push": f"pushing, adapt={self.adapt}", "map": f"mapping, probing={self.strategy}",
@@ -198,7 +200,9 @@ class App:
                 self.sim.set_goal_xy(x, y)
             else:
                 self.sim.place(self.selected, x, y, HALF_HEIGHT[self.selected] + 0.002, 0.0)
-            self._log(f"moved {self.selected} to ({x:.2f}, {y:.2f})")
+            if self.selected == "puck":
+                self.ui["puck_told"] = (x, y)   # a person placing the puck tells the robot where they put it
+            self._log(f"moved {self.selected} to ({x:.2f}, {y:.2f})" + (" and told the robot" if self.selected == "puck" else ""))
             self.selected = None
 
     # ---- main loop ---------------------------------------------------------------------------------
@@ -254,7 +258,7 @@ class App:
                 if self.auto and self.task is not None:
                     next(self.task)
                 self.sim.step()
-            futs = [self.tm.service.pending] + ([self.agent.svc_along.pending] if self.agent else [])
+            futs = [self.tm.service.pending] + ([self.agent.svc_along.pending, self.agent.svc_left.pending] if self.agent else [])
             fut = next((f for f in futs if f is not None and f.done() and f.exception() is not None), None)
             if fut is not None:
                 err = fut.exception()
@@ -307,7 +311,10 @@ class App:
                 start, end, rnd = self.ui["plan"]
                 path = [tuple(start), tuple(end)] if end is not None else None
                 ok = not rnd
-            self.ov.draw(r.scene, path=path, path_ok=ok, clear=False)
+            b = self.ui.get("belief")
+            self.ov.draw(r.scene, path=path, path_ok=ok, clear=False, probes=self.ui.get("search_pts", []),
+                         next_target=self.ui["next"] if self.mode == "push" else None,
+                         puck=b.xy if b is not None and b.known else None)
         pr = self.tm.prediction() if self.mode != "push" else None
         if self.mode != "push":
             self.ov.draw(r.scene,

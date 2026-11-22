@@ -47,6 +47,7 @@ def clear_spot(blocked, puck, goal):
 def scripted_task(sim, tm, agent, ui):
     """Wraps combined_task and injects the presenter's actions."""
     sim.place("puck", *PUCK_START, 0.02)
+    ui["puck_told"] = PUCK_START          # the task says where the puck starts; after that the robot finds it by touch
     sim.set_goal_xy(*GOAL_1)
     ui["beat"] = "1 · map by touch"
     inner = combined_task(sim, tm, agent, ui)
@@ -67,13 +68,16 @@ def scripted_task(sim, tm, agent, ui):
             moved_box = True
         if ui.get("phase") == "PUSH" and ui["beat"].startswith(("1", "2")):
             ui["beat"] = "3 · push the puck to the goal"
-        # At rest inside the goal: a puck sliding *through* the goal circle doesn't count.
-        at_goal = (ui.get("phase") == "PUSH" and sim.obj_speed("puck") < 0.005
-                   and np.linalg.norm(sim.puck_pose()[0] - sim.goal_xy()) <= GOAL_TOL)
+        # The robot decides it is at the goal from where it *felt* the puck; the log also shows the simulator's
+        # true distance, as a check that the touch estimate is honest.
+        at_goal = ui.get("phase") == "PUSH" and ui.get("status", "").startswith("at goal")
         if at_goal and not at_goal_prev:
             goals_done += 1
-            d = np.linalg.norm(sim.puck_pose()[0] - sim.goal_xy())
-            ui["log"].append(f"goal {goals_done} reached: puck {d*100:.1f} cm from goal, at rest")
+            b = ui["belief"].xy
+            d_est = np.linalg.norm(b - sim.goal_xy())
+            d_true = np.linalg.norm(sim.puck_pose()[0] - sim.goal_xy())
+            ui["log"].append(f"goal {goals_done} reached: robot feels the puck {d_est*100:.1f} cm from the goal "
+                             f"[simulator: {d_true*100:.1f} cm]")
             if goals_done == 1:
                 sim.set_friction("low")
                 sim.set_goal_xy(*GOAL_ICY)
@@ -84,11 +88,12 @@ def scripted_task(sim, tm, agent, ui):
                 ui["beat"] = "5 · done"
         at_goal_prev = at_goal
         # A puck that slid out of reach would stall the show: after 2 s the "presenter" puts it back.
-        if ui.get("status", "").startswith("puck out of reach"):
+        if ui.get("status", "").startswith(("puck out of reach", "lost the puck")):
             out_since = sim.t if out_since is None else out_since
             if sim.t - out_since > 2.0 and sim.ctl.tip_pos()[2] > 0.15:
                 sim.place("puck", *RECOVER_XY, 0.02)
-                ui["log"].append("PRESENTER: put the puck back on the table")
+                ui["puck_told"] = RECOVER_XY
+                ui["log"].append("PRESENTER: put the puck back on the table and told the robot where")
                 out_since = None
         else:
             out_since = None
@@ -101,8 +106,10 @@ def scripted_task(sim, tm, agent, ui):
         elif ui.get("status", "").startswith("no safe push") and agent.blocked is not None:
             jam_since = sim.t if jam_since is None else jam_since
             if sim.t - jam_since > 5.0 and sim.ctl.tip_pos()[2] > 0.15:
-                spot = clear_spot(agent.blocked, sim.puck_pose()[0], sim.goal_xy())
+                spot = clear_spot(agent.blocked, sim.puck_pose()[0], sim.goal_xy())   # the presenter can see
                 if spot is not None:
                     sim.place("puck", *spot, 0.02)
-                    ui["log"].append(f"PRESENTER: puck was wedged - nudged it to ({spot[0]:.2f}, {spot[1]:.2f})")
+                    ui["puck_told"] = tuple(spot)
+                    ui["log"].append(f"PRESENTER: puck was wedged - nudged it to ({spot[0]:.2f}, {spot[1]:.2f}) "
+                                     "and told the robot")
                 jam_since = None

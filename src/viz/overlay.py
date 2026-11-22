@@ -52,6 +52,7 @@ class Overlay:
         path_ok: bool = True,
         mask: np.ndarray | None = None,         # (len(ys), len(xs)) cells to draw; default all
         clear: bool = True,                     # False to append to a scene that already holds the model
+        puck: tuple[float, float] | None = None,  # where the robot believes the puck is (drawn as a cyan ring)
     ) -> None:
         if clear:
             scn.ngeom = 0
@@ -78,6 +79,11 @@ class Overlay:
         for x, y, h, on_obj in probes:
             rgba = (1.0, 0.55, 0.1, 1) if on_obj else (0.55, 0.55, 0.55, 1)
             _add(scn, mujoco.mjtGeom.mjGEOM_SPHERE, (0.006, 0, 0), (x, y, h + 0.007), rgba)
+        if puck is not None:
+            for k in range(24):  # ring of small spheres around the believed puck rim, just above its top
+                a = 2 * np.pi * k / 24
+                _add(scn, mujoco.mjtGeom.mjGEOM_SPHERE, (0.0025, 0, 0),
+                     (puck[0] + 0.035 * np.cos(a), puck[1] + 0.035 * np.sin(a), 0.046), (0.25, 0.75, 0.95, 1))
         if next_target is not None:
             x, y = next_target
             for k in range(16):  # ring of small spheres

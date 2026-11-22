@@ -360,6 +360,7 @@ function Readouts({ state, push }: { state: SimState | null; push: boolean }) {
   const rows: R[] = push
     ? [
         { k: "Pushes", v: String(state?.pushes.length ?? 0), sub: `${state?.push_rows ?? 0} in memory`, tip: "Each push becomes one example the model learns from. After a physics change the old ones are dropped." },
+        { k: "Touches to find", v: lp?.search_touches != null ? String(lp.search_touches) : "—", sub: lp?.true_err_cm != null ? `estimate ${lp.true_err_cm.toFixed(1)} cm off (check)` : "after the last push", tip: "It can't see the puck, so after every push it feels for it where the model predicts. Fewer touches = a better prediction. The check against the simulator's true position is shown for honesty; the robot never sees it." },
         { k: "Puck → goal", v: lp ? lp.goal_cm.toFixed(1) : "—", u: "cm", sub: "target < 3 cm", tip: "Where the puck stopped, measured from the centre of the green goal.", tone: lp ? (lp.goal_cm < 3 ? "ok" : undefined) : undefined },
         { k: "Prediction miss", v: lp?.miss_cm != null ? lp.miss_cm.toFixed(1) : "—", u: "cm", sub: lp?.change ? "physics changed" : "predicted vs actual", tip: "Before each push the robot predicts where the puck will stop. This is how far off it was. A sudden big miss means the world changed.", tone: lp?.change ? "warn" : undefined },
         think,
@@ -373,7 +374,7 @@ function Readouts({ state, push }: { state: SimState | null; push: boolean }) {
   return (
     <div className="grid grid-cols-2 gap-px border-b border-line bg-line">
       {rows.map((r, i) => (
-        <div key={r.k} className="bg-panel px-3 py-2.5">
+        <div key={r.k} className={clsx("bg-panel px-3 py-2.5", rows.length % 2 === 1 && i === rows.length - 1 && "col-span-2")}>
           <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.1em] text-fg-3">
             {r.k}
             <InfoTip text={r.tip} align={i % 2 ? "right" : "left"} />
