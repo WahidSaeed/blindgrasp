@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const display = Fraunces({ variable: "--nf-display", subsets: ["latin"], axes: ["SOFT", "opsz"], style: ["normal", "italic"] });
+const sans = IBM_Plex_Sans({ variable: "--nf-body", subsets: ["latin"], weight: ["400", "500", "600"] });
+const mono = IBM_Plex_Mono({ variable: "--nf-data", subsets: ["latin"], weight: ["400", "500", "600"] });
 
 export const metadata: Metadata = {
   title: "Blindgrasp — a blind robot that learns by touch",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="en" className={`${display.variable} ${sans.variable} ${mono.variable} h-full antialiased`}>
       <body className="min-h-full">{children}</body>
     </html>
   );
