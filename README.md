@@ -113,3 +113,11 @@ bench/ eval/   latency benchmark, Phase 1 acceptance, map and push evaluations
   (e.g. `https://blindgrasp-sim.onrender.com`). Redeploy after changing it - it is baked in at build time.
 - One simulation is shared by everyone who opens the page, and the hosted TabPFN daily token cap is shared too.
 
+### AWS (EC2) instead of Render
+
+`deploy/aws/` runs the same Docker image on an EC2 t3.small (Amazon Linux 2023) with Caddy in front for automatic HTTPS on
+`<elastic-ip-with-dashes>.sslip.io`. `user-data.sh` installs Docker and a `blindgrasp` boot service that runs `start.sh`
+(pull, build, run). The instance role reads `/blindgrasp/TABPFN_TOKEN` (SecureString) and `/blindgrasp/ALLOWED_ORIGINS`
+from SSM Parameter Store; no SSH, use Session Manager. Restart the service after changing a parameter:
+`sudo systemctl restart blindgrasp`.
+
