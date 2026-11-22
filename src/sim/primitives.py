@@ -56,13 +56,14 @@ class ProbeResult:
 
 
 def probe_down(sim: Sim, x: float, y: float, min_force: float = 0.3, max_depth: float = -0.01,
-               speed: float = PROBE_SPEED):
-    """Go to (x, y) at safe height, descend slowly until contact, record the height, retract."""
+               speed: float = PROBE_SPEED, hover: float = SAFE_Z):
+    """Go to (x, y) at `hover` height, descend slowly until contact, record the height, retract to `hover`.
+    A lower hover makes short hops (e.g. feeling for the puck) faster; only use it where nothing tall is near."""
     t0 = sim.t
-    yield from move_to(sim, (x, y, SAFE_Z))
+    yield from move_to(sim, (x, y, hover))
     sim.ctl.set_goal((x, y, max_depth), speed=speed)
     hit = None
-    t_end = sim.t + (SAFE_Z - max_depth) / speed + 2.0
+    t_end = sim.t + (hover - max_depth) / speed + 2.0
     while sim.t < t_end:
         yield
         hit = sim.probe_contact(min_force)
@@ -73,7 +74,7 @@ def probe_down(sim: Sim, x: float, y: float, min_force: float = 0.3, max_depth: 
             break
     tip = sim.ctl.tip_pos().copy()
     sim.ctl.hold()
-    yield from move_to(sim, (x, y, SAFE_Z), speed=APPROACH_SPEED * 2)
+    yield from move_to(sim, (x, y, hover), speed=APPROACH_SPEED * 2)
     if hit is None:
         return ProbeResult(float(tip[0]), float(tip[1]), float(tip[2] - TIP_R), 0.0, False, sim.t - t0)
     # Report where the touch happened: near a box edge that can be the paddle or rod, not the tip.
@@ -81,26 +82,42 @@ def probe_down(sim: Sim, x: float, y: float, min_force: float = 0.3, max_depth: 
 
 
 # ---- pushing ----------------------------------------------------------------------------------------
+def push_frame(d, angle: float) -> np.ndarray:
+    """World displacement d -> (along, left) in the frame of a push along `angle`."""
+    u = np.array([np.cos(angle), np.sin(angle)])
+    return np.array([np.asarray(d) @ u, np.asarray(d) @ np.array([-u[1], u[0]])])
+
+
 @dataclass
 class PushResult:
+    """What the robot knows after a push is only what it commanded and what the paddle felt. Where the puck went
+    has to be found by touch (src/demos/puck_search.py). The true_* fields are simulator truth, for scoring and
+    for the motion checks only; the robot's logic never reads them."""
     angle: float        # push direction in world frame (rad)
     offset: float       # sideways offset of the paddle centre from the puck centre (m, + = left of u)
     distance: float     # commanded travel after first contact (m)
     speed: float        # m/s
-    start_xy: np.ndarray
-    end_xy: np.ndarray
-    d_world: np.ndarray  # (dx, dy) in world frame
-    d_push: np.ndarray   # (along, left) in the push frame
-    dyaw: float
-    tilt: float          # max puck tilt during the push (rad)
+    start_xy: np.ndarray   # where the robot believed the puck was (the push was aimed at this)
+    felt_puck: bool        # the paddle felt resistance from something other than the table during the strike
+    peak_force: float      # largest contact force the paddle felt during the strike (N)
+    tilt: float            # max puck tilt during the push (rad)          [truth, diagnostics]
     arm_table_contacts: int
-    ok: bool             # reached all waypoints, puck upright, no arm-table contact
+    ok: bool               # reached all waypoints, puck upright, no arm-table contact
+    true_start_xy: np.ndarray   # [truth, scoring only]
+    true_end_xy: np.ndarray     # [truth, scoring only]
+
+    @property
+    def true_d_push(self) -> np.ndarray:
+        """True (along, left) displacement [truth, scoring only]."""
+        return push_frame(self.true_end_xy - self.true_start_xy, self.angle)
 
 
-def push(sim: Sim, angle: float, offset: float, distance: float, speed: float = 0.1, settle_s: float = 2.0):
-    """Put the paddle behind the puck, push along `angle` by `distance`, retract, wait for the puck to stop.
-    Returns the puck's displacement in world and push frames."""
-    p0, yaw0 = sim.puck_pose()
+def push(sim: Sim, angle: float, offset: float, distance: float, speed: float, puck_xy, settle_s: float = 0.8):
+    """Put the paddle behind where the robot believes the puck is (puck_xy), push along `angle` by `distance`,
+    retract, and wait a fixed settle_s for the puck to stop (a blind robot can't see when it stops; on ice a
+    full-speed strike slides for ~0.6 s, and the retract already takes ~1 s)."""
+    p0 = np.asarray(puck_xy, float)
+    true0 = sim.puck_pose()[0]
     u = np.array([np.cos(angle), np.sin(angle)])
     n = np.array([-u[1], u[0]])
     gap = runup(speed)
@@ -118,9 +135,13 @@ def push(sim: Sim, angle: float, offset: float, distance: float, speed: float = 
     # paddle's real speed at contact and `distance` its real follow-through (the arm lags its setpoint).
     sim.ctl.set_goal((*(end + u * 0.15), PUSH_TIP_Z), speed=speed)
     t_end = sim.t + (gap + distance) / speed + 3.0
+    peak = 0.0
     while sim.t < t_end:
         yield
         tilt = max(tilt, sim.puck_tilt())
+        felt = sim.probe_contact(0.0, exclude_table=True)
+        if felt is not None:
+            peak = max(peak, felt[1])
         if (sim.ctl.tip_pos()[:2] - start) @ u >= gap + distance:
             sim.ctl.hold()
             break
@@ -134,17 +155,14 @@ def push(sim: Sim, angle: float, offset: float, distance: float, speed: float = 
     yield from move_to(sim, (*back_off, SAFE_Z), speed=TRANSIT_SPEED)
 
     t_end = sim.t + settle_s
-    still = 0
-    while sim.t < t_end and still < 50:
+    while sim.t < t_end:
         yield
         tilt = max(tilt, sim.puck_tilt())
-        still = still + 1 if sim.obj_speed("puck") < 1e-3 else 0
 
-    p1, yaw1 = sim.puck_pose()
-    d = p1 - p0
     arm_hits = sim.contacts.arm_table - contacts0
     return PushResult(
-        angle=angle, offset=offset, distance=distance, speed=speed, start_xy=p0, end_xy=p1,
-        d_world=d, d_push=np.array([d @ u, d @ n]), dyaw=wrap(yaw1 - yaw0), tilt=tilt,
+        angle=angle, offset=offset, distance=distance, speed=speed, start_xy=p0,
+        felt_puck=bool(peak >= 0.3), peak_force=float(peak), tilt=tilt,
         arm_table_contacts=arm_hits, ok=bool(ok and tilt < 0.3 and arm_hits == 0),
+        true_start_xy=true0, true_end_xy=sim.puck_pose()[0],
     )

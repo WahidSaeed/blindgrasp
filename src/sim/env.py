@@ -114,9 +114,11 @@ class Sim:
             elif other in self.probe_geoms:
                 self.contacts.probe_table += 1
 
-    def probe_contact(self, min_force: float = 0.3) -> tuple[float, float, float, float] | None:
+    def probe_contact(self, min_force: float = 0.3, exclude_table: bool = False) -> tuple[float, float, float, float] | None:
         """If the probe presses on something non-robot with total normal force >= min_force,
-        return (highest contact z, total normal force, x, y of that contact)."""
+        return (highest contact z, total normal force, x, y of that contact).
+        exclude_table: ignore contacts with the table top (e.g. to feel the puck during a push; a wrist force
+        sensor tells a sideways push on an object from the table pushing up)."""
         d, m = self.data, self.model
         total, zmax, xy = 0.0, -np.inf, (0.0, 0.0)
         for i in range(d.ncon):
@@ -125,7 +127,7 @@ class Sim:
             if (g1 in self.probe_geoms) == (g2 in self.probe_geoms):
                 continue
             other = g2 if g1 in self.probe_geoms else g1
-            if other in self.robot_geoms:
+            if other in self.robot_geoms or (exclude_table and other == self.table_geom):
                 continue
             mujoco.mj_contactForce(m, d, i, self._force)
             total += abs(self._force[0])

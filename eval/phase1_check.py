@@ -74,17 +74,17 @@ def check_pushes(n: int, rng: np.random.Generator) -> bool:
             if all(in_workspace(*p, margin=margin) for p in pts):
                 break
         sim.place("puck", px, py, 0.02, rng.uniform(-np.pi, np.pi))
-        res.append(run(sim, push(sim, a, off, dist, speed)))
+        res.append(run(sim, push(sim, a, off, dist, speed, (px, py))))  # motion test: true start
     for i, r in enumerate(res):
         if not r.ok:
             print(f"   push {i} not ok: angle {np.degrees(r.angle):.0f} deg, puck {np.round(r.start_xy, 3)}, "
-                  f"tilt {r.tilt:.2f}, arm hits {r.arm_table_contacts}, moved {np.round(r.d_push * 1000, 1)} mm "
+                  f"tilt {r.tilt:.2f}, arm hits {r.arm_table_contacts}, moved {np.round(r.true_d_push * 1000, 1)} mm "
                   f"(waypoint timeout if tilt/hits are fine)")
     ok = np.array([r.ok for r in res])
     tilt = np.array([r.tilt for r in res])
     hits = sum(r.arm_table_contacts for r in res)
-    along = np.array([r.d_push[0] / r.distance for r in res])
-    side = np.abs([r.d_push[1] for r in res]) * 1000
+    along = np.array([r.true_d_push[0] / r.distance for r in res])
+    side = np.abs([r.true_d_push[1] for r in res]) * 1000
     print(f"pushes: n={n} ok={ok.sum()} | flips (tilt>0.3 rad)={np.sum(tilt > 0.3)} max tilt {tilt.max():.3f} rad "
           f"| arm-table contacts={hits}")
     print(f"   travel/commanded: median {np.median(along):.2f} (min {along.min():.2f}, max {along.max():.2f}); "

@@ -51,6 +51,12 @@ export function narrate(s: SimState | null, connected: boolean | null): Narratio
       return { title: "Stuck: no safe push", body: "Every push it considers would hit a box or leave the table. Move the puck or the goal to help it.", tone: "alert" };
     if (st.startsWith("puck out of reach"))
       return { title: "Puck out of reach", body: "Click the red puck, then click a spot on the table to put it back.", tone: "alert" };
+    if (st.startsWith("lost the puck"))
+      return { title: "Lost the puck", body: "It felt everywhere the puck could be and didn't find it. Click the red puck, then a spot on the table, to tell it where the puck is.", tone: "alert" };
+    if (st.startsWith("feeling for the puck: not where"))
+      return { title: "The puck isn't where it predicted", body: "Its touches came up empty where the model said the puck would stop, so it searches wider. Finding it far away is how it notices the physics changed.", tone: "alert" };
+    if (st.startsWith("feeling for the puck"))
+      return { title: "Feeling for the puck", body: `It can't see where the puck stopped, so it touches where TabPFN predicts it should be. Each touch rules out half the remaining spots; the better the model, the fewer touches it needs.${lastPush?.search_touches != null ? ` Last time: ${lastPush.search_touches} touches.` : ""}`, tone: "think" };
     if (st.startsWith("checking the route"))
       return { title: "Feeling the route before pushing", body: "The map is only as fresh as its last touch, so it taps along the puck's path to make sure nothing moved there.", tone: "think" };
     if (st.startsWith("seed push"))

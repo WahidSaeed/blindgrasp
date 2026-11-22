@@ -1,11 +1,18 @@
 """Demo 2: few-shot pushing.
 
-Context rows: (sideways offset, push distance, push speed) -> puck displacement in the push frame
-(along = forward along the push, left = sideways). The physics doesn't care which way the push points,
-so the angle is not a feature; that halves what the learner must figure out. One regressor per target.
+Context rows: (sideways offset, push distance, push speed) -> puck displacement in
+the push frame (along = forward along the push, left = sideways). The table is uniform, but the arm is not: the same
+commanded push slides 2.9-3.6 cm depending on its direction, because the joints move differently and the paddle's
+real speed at contact differs. DIR_FEATURE adds the direction as an input, but it is off: with only 3-10 pushes the
+two extra inputs made predictions worse (GP, 4 seeds: median miss 0.36 cm with it, 0.14 cm without). One regressor
+per target.
 
 Planner: sample ~500 candidate pushes aimed roughly at the goal, predict where each leaves the puck,
-pick the one landing closest (optionally + kappa * predicted spread: kappa > 0 cautious, < 0 exploring).
+pick the one landing closest + kappa * predicted spread (kappa > 0 cautious, < 0 exploring). The default
+kappa = 1 prefers pushes the model is sure of: near pushes it has already made, not extrapolations. Without
+it the planner, aiming at a goal out of reach, kept picking the push with the most optimistic predicted
+slide, and the puck fell short or overshot by 1-2 cm. Pushes are planned with the paddle centred on the
+puck (offset 0): the offset barely changes the slide (< 3 mm) and only added a dimension to learn.
 Replan after every push until the puck is within GOAL_TOL of the goal.
 
 Change handling (a push missing its prediction by > 2x the predicted spread = the physics changed):
@@ -28,10 +35,23 @@ GOAL_TOL = 0.03
 N_SEED = 3
 N_CANDIDATES = 500
 WINDOW = 8
-OFFSET_RANGE = (-0.015, 0.015)
+OFFSET_RANGE = (-0.015, 0.015)   # random strikes for eval/calibration.py; planned pushes use PLAN_OFFSET
+PLAN_OFFSET = 0.0
+KAPPA = 1.0
+DIR_FEATURE = False
+
+
+def features(offset, distance, speed, angle) -> np.ndarray:
+    """Push -> model input row(s). Works on scalars or arrays."""
+    cols = [offset, distance, speed] + ([np.cos(angle), np.sin(angle)] if DIR_FEATURE else [])
+    return np.column_stack([np.broadcast_to(np.asarray(c, float), np.shape(speed)) for c in cols]) \
+        if np.ndim(speed) else np.array(cols, float)
 DIST_RANGE = (0.005, 0.04)    # paddle follow-through after contact (m); the puck may slide much further
 SPEED_RANGE = (0.05, 0.45)    # paddle speed at contact (m/s): the puck's slide grows ~ speed^2 / friction.
                               # Capped so that on the icy setting a full-speed strike (~15 cm slide) stays on the table.
+# Seed pushes: (follow-through, speed) spread over the action space - a slow carry, a medium and a fast strike - so the
+# first model has anchors along the steep, nonlinear speed -> slide curve instead of three random points. None = random.
+SEED_DESIGN = [(0.035, 0.12), (0.02, 0.25), (0.005, 0.35)]
 
 
 @dataclass
@@ -43,6 +63,7 @@ class Plan:
     predicted_end: np.ndarray | None      # world xy
     spread: float | None                  # ~ half-width of the 10-90% band of the end point (m)
     random: bool                          # a seed/exploration push
+    band: tuple | None = None             # (a10, a50, a90, l10, l50, l90): predicted displacement, push frame
 
 
 @dataclass
@@ -73,7 +94,7 @@ def feasible(puck_xy, angle, offset, distance, speed, along_guess) -> bool:
 
 
 class PushAgent:
-    def __init__(self, learner: str = "gp", adapt: str = "reset", kappa: float = 0.0, seed: int = 0,
+    def __init__(self, learner: str = "gp", adapt: str = "reset", kappa: float = KAPPA, seed: int = 0,
                  window: int = WINDOW, learner_kwargs: dict | None = None, blocked=None):
         """blocked: optional f(points (k, 2)) -> bool array, True where a point is occupied (e.g. by a box
         on the touch map). Pushes whose paddle start or predicted puck path cross a blocked point are rejected."""
@@ -110,7 +131,7 @@ class PushAgent:
         if k > 1:  # 30% in any direction, so a sideways detour can beat pushes that are blocked or off the table
             wide = self.rng.random(k) < 0.3
             a[wide] = self.rng.uniform(-np.pi, np.pi, wide.sum())
-        off = self.rng.uniform(*OFFSET_RANGE, k)
+        off = np.full(k, PLAN_OFFSET)
         dist = self.rng.uniform(DIST_RANGE[0], DIST_RANGE[1], k)
         spd = self.rng.uniform(SPEED_RANGE[0], speed_max, k)
         return a, off, dist, spd
@@ -124,6 +145,8 @@ class PushAgent:
             for k_try in range(240):
                 aim = (0.4, 1.0, 2.0, np.pi)[k_try // 60]
                 a, off, dist, spd = (v[0] for v in self._sample(puck, goal, 1, aim, speed_max=0.35))
+                if SEED_DESIGN is not None:
+                    dist, spd = SEED_DESIGN[len(self.X) % len(SEED_DESIGN)]
                 if not feasible(puck, a, off, dist, spd, dist):
                     continue
                 if self.blocked is not None:
@@ -139,12 +162,14 @@ class PushAgent:
         if ok.sum() < 20:
             ok[:] = True
         a, off, dist, spd = a[ok], off[ok], dist[ok], spd[ok]
-        C = np.column_stack([off, dist, spd])
+        C = features(off, dist, spd, a)
         X, Y = np.stack(self.X), np.stack(self.Y)
         fa = self.svc_along.submit(self.version, X, Y[:, 0], C)
         fl = self.svc_left.submit(self.version, X, Y[:, 1], C)
         while not (fa.done() and fl.done()):
             yield
+        if fa.exception() is not None or fl.exception() is not None:
+            return None   # the fit failed (e.g. out of GPU memory); the caller sees the failed future and falls back
         (a10, a50, a90), (l10, l50, l90) = (fa.result().q10, fa.result().q50, fa.result().q90), \
                                             (fl.result().q10, fl.result().q50, fl.result().q90)
         u = np.column_stack([np.cos(a), np.sin(a)])
@@ -160,7 +185,8 @@ class PushAgent:
         k = int(np.argmin(score))
         if score[k] >= 1.0:
             return None  # every candidate would leave the workspace or hit something on the map
-        return Plan(float(a[k]), float(off[k]), float(dist[k]), float(spd[k]), end[k], float(spread[k]), False)
+        band = tuple(float(v[k]) for v in (a10, a50, a90, l10, l50, l90))
+        return Plan(float(a[k]), float(off[k]), float(dist[k]), float(spd[k]), end[k], float(spread[k]), False, band)
 
     def _collides(self, puck, a, off, spd, far) -> np.ndarray:
         """True for candidates whose paddle start, or the puck's path to its (pessimistic) end, hits a blocked
@@ -199,7 +225,7 @@ class PushAgent:
         change, dropped = False, 0
         if miss is not None and len(self.X) >= N_SEED + 2:
             change = miss > max(2 * plan.spread, 0.015)
-        self.X.append(np.array([plan.offset, plan.distance, plan.speed]))
+        self.X.append(features(plan.offset, plan.distance, plan.speed, plan.angle))
         self.Y.append(np.array([along, left]))
         self.version += 1
         if self.adapt == "window":
@@ -216,14 +242,73 @@ class PushAgent:
         self.svc_left.shutdown()
 
 
+# ---- one push, then find the puck by touch ------------------------------------------------------------------
+def search_prior(belief_xy, p: Plan, felt_puck: bool):
+    from src.demos.puck_search import prior_predicted, prior_seed, prior_unmoved
+
+    if not felt_puck:
+        return prior_unmoved(belief_xy, p.angle)
+    if p.band is None:
+        return prior_seed(belief_xy, p.angle, p.distance)
+    return prior_predicted(belief_xy, p.angle, p.band)
+
+
+def execute_push(sim, agent: PushAgent, p: Plan, belief, goal, ui: dict, hover: float | None = None):
+    """Generator: strike, feel for the puck where the push model says it should be, learn from where it was found.
+    Returns (PushResult, PushEvent | None, SearchResult). The event is None when nothing was learned (the paddle
+    missed the puck, or the puck could not be found)."""
+    from src.demos.puck_search import locate_puck
+    from src.sim.env import SAFE_Z
+    from src.sim.primitives import push, push_frame
+
+    start = belief.xy.copy()
+    ui["status"] = "seed push (random)" if p.random else "pushing"
+    r = yield from push(sim, p.angle, p.offset, p.distance, p.speed, start)
+    ui["plan"] = None
+    ui["status"] = "feeling for the puck" + ("" if r.felt_puck else ": the paddle didn't feel it")
+    s = yield from locate_puck(sim, search_prior(start, p, r.felt_puck), hover=hover or SAFE_Z, ui=ui, seed=agent.n)
+    true_err = None if s.xy is None else float(np.linalg.norm(s.xy - r.true_end_xy))   # simulator truth: shown, never used
+    where = "" if s.xy is None else f" at ({s.xy[0]:.2f}, {s.xy[1]:.2f})"
+    check = "" if true_err is None else f" [check vs simulator: {true_err * 100:.1f} cm off]"
+    if s.xy is None:
+        belief.known = False
+        ui["log"].append(f"lost the puck after {s.n} touches - put it back on the table to tell the robot where it is")
+        return r, None, s
+    belief.tell(s.xy)
+    if not r.felt_puck:
+        ui["log"].append(f"the paddle didn't feel the puck; found it by touch after {s.n} touches{where}{check}")
+        return r, None, s
+    along, left = push_frame(s.xy - start, p.angle)
+    ev = agent.observe(p, along, left, s.xy, goal)
+    ui["pushes"].append({"n": ev.n + 1, "goal_cm": ev.goal_err * 100,
+                         "miss_cm": None if ev.miss is None else ev.miss * 100,
+                         "spread_cm": None if ev.spread is None else ev.spread * 100, "change": ev.change,
+                         "search_touches": s.n, "true_err_cm": None if true_err is None else true_err * 100})
+    ui["log"].append(f"push {ev.n + 1}: felt the puck after {s.n} touches{where}"
+                     + (" (not where predicted: searched wider)" if s.widened else "") + check)
+    if ev.change:
+        ui["log"].append(f"push {ev.n + 1}: missed prediction by {ev.miss*100:.1f} cm (> 2x spread "
+                         f"{ev.spread*100:.1f} cm): physics changed" + (f", dropped {ev.dropped} old pushes" if ev.dropped else ""))
+    return r, ev, s
+
+
 # ---- live demo -----------------------------------------------------------------------------------------
 def pushing_task(sim, agent: PushAgent, ui: dict):
-    """Push forever: when the puck is away from the goal, plan, push, learn; otherwise wait for the goal to move.
+    """Push forever: when the puck is away from the goal, plan, push, feel for the puck, learn; otherwise wait.
+    The puck's position comes from being told (ui['puck_told']: task start, or a person placing it) and from touch.
     ui gets: 'plan' (start, predicted end), 'pushes' list of dicts for the charts, 'log' list of strings."""
-    from src.sim.primitives import push, wait
+    from src.demos.puck_search import PuckBelief, take_told
+    from src.sim.primitives import wait
 
+    belief = ui.setdefault("belief", PuckBelief())
+    ui.setdefault("search_pts", [])
     while True:
-        puck, _ = sim.puck_pose()
+        take_told(ui, belief)
+        if not belief.known:
+            ui["plan"], ui["status"] = None, "lost the puck - click it, then the table, to tell the robot where it is"
+            yield
+            continue
+        puck = belief.xy
         goal = sim.goal_xy()
         if np.linalg.norm(puck - goal) <= GOAL_TOL:
             ui["plan"] = None
@@ -242,13 +327,4 @@ def pushing_task(sim, agent: PushAgent, ui: dict):
             yield from wait(sim, 1.0)   # re-plan once a second, not every physics step
             continue
         ui["plan"] = (puck.copy(), None if p.predicted_end is None else p.predicted_end.copy(), p.random)
-        ui["status"] = "seed push (random)" if p.random else "pushing"
-        r = yield from push(sim, p.angle, p.offset, p.distance, p.speed)
-        ev = agent.observe(p, r.d_push[0], r.d_push[1], r.end_xy, goal)
-        ui["pushes"].append({"n": ev.n + 1, "goal_cm": ev.goal_err * 100,
-                             "miss_cm": None if ev.miss is None else ev.miss * 100,
-                             "spread_cm": None if ev.spread is None else ev.spread * 100, "change": ev.change})
-        if ev.change:
-            ui["log"].append(f"push {ev.n + 1}: missed prediction by {ev.miss*100:.1f} cm (> 2x spread "
-                             f"{ev.spread*100:.1f} cm): physics changed" + (f", dropped {ev.dropped} old pushes" if ev.dropped else ""))
-        ui["plan"] = None
+        yield from execute_push(sim, agent, p, belief, goal, ui)
