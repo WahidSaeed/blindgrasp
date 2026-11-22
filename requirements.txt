@@ -1,0 +1,10 @@
+mujoco>=3.2
+mink>=0.0.5
+tabpfn>=2.1
+tabpfn-client>=0.1
+python-dotenv>=1.0
+torch>=2.3
+scikit-learn>=1.4
+numpy>=1.26
+rerun-sdk>=0.18
+imageio[ffmpeg]>=2.34

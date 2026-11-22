@@ -1,0 +1,70 @@
+<mujoco model="blindgrasp">
+  <!-- Panda base at the world origin. Table top is at z = 0; the table spans
+       x in [0.15, 0.75] (0.6 m) and y in [-0.4, 0.4] (0.8 m) in front of the arm.
+       Probes/pushes stay inside the tested workspace box x in [0.20, 0.72], y in [-0.35, 0.35]. -->
+  <include file="panda_probe.xml"/>
+
+  <option timestep="0.002" integrator="implicitfast" impratio="10" cone="elliptic"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <global azimuth="160" elevation="-30" offwidth="1280" offheight="720"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="tabletex" builtin="checker" mark="edge" rgb1="0.75 0.72 0.65" rgb2="0.7 0.67 0.6"
+      markrgb="0.5 0.5 0.5" width="300" height="300"/>
+    <material name="tabletop" texture="tabletex" texuniform="true" texrepeat="10 10"/>
+  </asset>
+
+  <default>
+    <default class="obj">
+      <geom condim="4" friction="0.5 0.01 0.001" solref="0.004 1" group="1"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light pos="0.5 0 2" dir="0 0 -1" directional="true"/>
+    <geom name="floor" type="plane" size="2 2 0.05" pos="0 0 -0.75" rgba="0.2 0.25 0.3 1"/>
+    <!-- Pedestal so the Panda base is flush with the table top. -->
+    <geom name="pedestal" type="box" size="0.12 0.12 0.375" pos="-0.02 0 -0.375" rgba="0.3 0.3 0.3 1"/>
+    <body name="table" pos="0.45 0 0">
+      <geom name="table_top" type="box" size="0.3 0.4 0.02" pos="0 0 -0.02" material="tabletop"
+        friction="0.5 0.005 0.0001"/>
+      <geom type="box" size="0.02 0.02 0.355" pos="0.27 0.37 -0.395" rgba="0.4 0.3 0.2 1"/>
+      <geom type="box" size="0.02 0.02 0.355" pos="-0.27 0.37 -0.395" rgba="0.4 0.3 0.2 1"/>
+      <geom type="box" size="0.02 0.02 0.355" pos="0.27 -0.37 -0.395" rgba="0.4 0.3 0.2 1"/>
+      <geom type="box" size="0.02 0.02 0.355" pos="-0.27 -0.37 -0.395" rgba="0.4 0.3 0.2 1"/>
+    </body>
+
+    <!-- Three boxes of different sizes, draggable (Ctrl + right-drag in the viewer). -->
+    <body name="box_a" pos="0.38 0.22 0.04">
+      <freejoint/>
+      <geom name="box_a" class="obj" type="box" size="0.05 0.04 0.04" mass="1.5" rgba="0.2 0.5 0.8 1"/>
+    </body>
+    <body name="box_b" pos="0.60 -0.24 0.03">
+      <freejoint/>
+      <geom name="box_b" class="obj" type="box" size="0.07 0.035 0.03" mass="1.5" rgba="0.3 0.7 0.4 1"/>
+    </body>
+    <body name="box_c" pos="0.63 0.18 0.06">
+      <freejoint/>
+      <geom name="box_c" class="obj" type="box" size="0.035 0.035 0.06" mass="1.5" rgba="0.8 0.4 0.6 1"/>
+    </body>
+
+    <!-- Puck: own geom so friction / mass can be changed at runtime. -->
+    <body name="puck" pos="0.42 -0.05 0.02">
+      <freejoint/>
+      <geom name="puck" class="obj" type="cylinder" size="0.035 0.02" mass="0.2" priority="1" rgba="0.9 0.2 0.2 1"/>
+    </body>
+
+    <!-- Goal marker: mocap body, draggable, no collisions. -->
+    <body name="goal" mocap="true" pos="0.60 0.0 0.0005">
+      <geom name="goal" type="cylinder" size="0.03 0.0005" contype="0" conaffinity="0" rgba="0.1 0.9 0.2 0.6"/>
+    </body>
+  </worldbody>
+
+  <sensor>
+    <touch name="tip_touch" site="tip"/>
+  </sensor>
+</mujoco>
