@@ -5,7 +5,7 @@ services:
     name: blindgrasp-sim
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: standard        # 1 CPU / 2 GB. Rendering + physics need a full CPU; starter (0.5 CPU) is too slow.
+    plan: free            # 0.1 CPU / 512 MB, sleeps after 15 min idle. For smooth video use standard + WIDTH/HEIGHT/FPS below.
     healthCheckPath: /state
     envVars:
       - key: TABPFN_TOKEN

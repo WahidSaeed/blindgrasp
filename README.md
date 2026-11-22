@@ -107,7 +107,7 @@ bench/ eval/   latency benchmark, Phase 1 acceptance, map and push evaluations
 ## Deploy (Render + Vercel, hosted TabPFN)
 
 - **Sim server → Render.** `Dockerfile` builds a slim image (no PyTorch, no local weights; `BLINDGRASP_BACKEND=hosted`,
-  headless MuJoCo via OSMesa). `render.yaml` is a Blueprint for it (Standard plan: 1 CPU / 2 GB). Set two env vars in
+  headless MuJoCo via OSMesa). `render.yaml` is a Blueprint for it (free plan; video defaults to 640x400 @ 8 fps - raise `WIDTH`/`HEIGHT`/`FPS` on a paid plan). Set two env vars in
   the Render dashboard: `TABPFN_TOKEN` (secret) and `ALLOWED_ORIGINS` (the Vercel URL, e.g. `https://blindgrasp.vercel.app`).
 - **UI → Vercel.** Import the repo with root directory `web/` and set `NEXT_PUBLIC_SIM_URL` to the Render URL
   (e.g. `https://blindgrasp-sim.onrender.com`). Redeploy after changing it - it is baked in at build time.

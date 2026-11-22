@@ -24,4 +24,6 @@ COPY src src
 RUN useradd --create-home app && chown -R app /app
 USER app
 EXPOSE 8000
-CMD ["python", "-m", "src.web.server", "--mode", "script", "--learner", "tabpfn", "--fps", "15"]
+# Defaults suit Render's free tier (0.1 CPU): smaller, slower video. On a bigger plan set e.g. WIDTH=960 HEIGHT=600 FPS=15.
+ENV WIDTH=640 HEIGHT=400 FPS=8 SPEED=2
+CMD python -m src.web.server --mode script --learner tabpfn --width $WIDTH --height $HEIGHT --fps $FPS --speed $SPEED
