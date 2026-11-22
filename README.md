@@ -6,6 +6,8 @@ a new row in its context. See `Build Plan.md` for the full plan.
 
 <p align="center"><img src="docs/media/mapping.gif" width="640" alt="The arm maps the table by touch; tiles are TabPFN's predicted heights"></p>
 
+Deployed Application: <link href="http://ec2-63-190-61-111.eu-central-1.compute.amazonaws.com/">Blind Grasp</link>
+
 ## The story
 
 **Robots can't always see.** Dust, darkness or their own gripper block the camera. Blindgrasp asks what a robot can
