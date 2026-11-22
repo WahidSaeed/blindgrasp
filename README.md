@@ -115,8 +115,10 @@ bench/ eval/   latency benchmark, Phase 1 acceptance, map and push evaluations
 
 ### AWS (EC2) instead of Render
 
-`deploy/aws/` runs the same Docker image on an EC2 t3.small (Amazon Linux 2023) with Caddy in front for automatic HTTPS on
-`<elastic-ip-with-dashes>.sslip.io`. `user-data.sh` installs Docker and a `blindgrasp` boot service that runs `start.sh`
+`deploy/aws/` runs the sim server and the UI (`web/Dockerfile`, Next.js standalone) on one EC2 t3.small (Amazon Linux 2023)
+with Caddy in front for automatic HTTPS on `<elastic-ip-with-dashes>.sslip.io`: `/state`, `/action`, `/stream` go to the
+sim server, everything else to the UI (same origin, so the UI needs no `NEXT_PUBLIC_SIM_URL`). The simulation pauses when
+nobody is watching (`IDLE_AFTER`, default 60 s) to save CPU and TabPFN tokens. `user-data.sh` installs Docker and a `blindgrasp` boot service that runs `start.sh`
 (pull, build, run). The instance role reads `/blindgrasp/TABPFN_TOKEN` (SecureString) and `/blindgrasp/ALLOWED_ORIGINS`
 from SSM Parameter Store; no SSH, use Session Manager. Restart the service after changing a parameter:
 `sudo systemctl restart blindgrasp`.
