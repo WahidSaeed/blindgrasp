@@ -25,9 +25,16 @@ override the default (local if a CUDA/MPS GPU exists, else hosted).
 
 ## Run the demo (browser)
 
+Two processes: the Python sim server (physics, robot, TabPFN, video stream) and the Next.js UI.
+
 ```bash
-.venv/bin/python -m src.web.server --mode script            # then open http://127.0.0.1:8000
+.venv/bin/python -m src.web.server --mode script --learner tabpfn   # sim server on http://127.0.0.1:8000
+cd web && npm install && npm run dev                                 # UI on http://localhost:3000
 ```
+
+Open http://localhost:3000. The UI talks to the sim server at `NEXT_PUBLIC_SIM_URL` (default
+`http://127.0.0.1:8000`); it reconnects on its own if the server restarts. The old single-file page is still
+served at http://127.0.0.1:8000 as a fallback.
 
 | `--mode`   | What it shows |
 |------------|---------------|
@@ -40,8 +47,9 @@ Learner: `--learner tabpfn|gp|knn|mlp` (also switchable in the page). For TabPFN
 slow-learner settings: `--n-estimators 1 --pred-step 0.04` (1-model ensemble, map predicted on a 4 cm grid
 and upsampled). `--max-rows N` caps the context. `--speed` sets sim seconds per wall second.
 
-In the page: drag to orbit, wheel to zoom, click a box/puck/goal then the table to move it.
-Keys: Space pause, R reset, T ground truth, F table friction (normal / icy / sticky), M puck mass.
+In the page: drag to orbit, Ctrl/⌘ + scroll (or the +/− buttons) to zoom, click a box/puck/goal then the table
+to move it. Keys: Space pause, R reset, T ground truth, F table friction (normal / icy / sticky), M puck mass,
+1-4 switch act, ? shortcuts.
 
 The native MuJoCo viewer also works (`.venv/bin/mjpython -m src.demos.touch_map`; F6-F10 keys), but the
 browser viewer is the main one.
@@ -68,7 +76,8 @@ src/sim/       env.py (scene, contacts, ground truth, friction/mass), controller
 src/learn/     tabpfn_service.py (TabPFN, context tables, background fit thread), baselines.py (GP, kNN, MLP)
 src/demos/     touch_map.py (Act 1), push.py (Act 2), combined.py (1 + 2), script.py (presenter mode)
 src/viz/       overlay.py (map tiles, probe dots, push path)
-src/web/       server.py + static/index.html (browser viewer: MJPEG stream, controls, live charts)
+src/web/       server.py (sim server: MJPEG /stream, /state, /action) + static/index.html (fallback page)
+web/           Next.js UI (src/components/Dashboard.tsx, Viewport.tsx, LineChart.tsx; src/lib/sim.ts = API client)
 bench/ eval/   latency benchmark, Phase 1 acceptance, map and push evaluations
 ```
 

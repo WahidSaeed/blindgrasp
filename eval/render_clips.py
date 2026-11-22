@@ -93,6 +93,8 @@ def main() -> None:
     writer = imageio.get_writer(out, fps=args.fps, codec="libx264", quality=8, macro_block_size=8)
     t0, frames = time.perf_counter(), 0
     end_t = None
+    acted = 0          # map/push clips: scripted interrupt (box move / icy table) already done?
+    goals_hit = 0
     try:
         while sim.t < args.max_sim:
             for _ in range(steps_per_frame):
@@ -100,6 +102,29 @@ def main() -> None:
                 sim.step()
             if args.mode != "push":
                 tm.wait()   # deterministic: the robot always sees the newest map
+            # Act clips get their interrupt from the plan: Act 1 a moved box, Act 2 an icy table.
+            if args.mode == "map" and not acted and tm.n >= 30 and sim.ctl.tip_pos()[2] > 0.15:
+                sim.place("box_c", 0.45, -0.20, 0.06)
+                ui["log"].append("PRESENTER: moved the pink box to (0.45, -0.20)")
+                ui["beat"], acted = "Act 1 · a box was moved: probes contradict the map", 1
+            if args.mode == "map" and tm.n >= 60:
+                end_t = end_t or sim.t + 2.0
+                if sim.t >= end_t:
+                    break
+            if args.mode == "push":
+                at = (sim.obj_speed("puck") < 0.005
+                      and np.linalg.norm(sim.puck_pose()[0] - sim.goal_xy()) <= 0.03)
+                if at and goals_hit == 0:
+                    goals_hit = 1
+                    sim.set_friction("low")
+                    sim.set_goal_xy(0.42, -0.12)
+                    ui["log"].append("PRESENTER: the table is now icy; goal moved")
+                    ui["beat"] = "Act 2 · icy table: first push overshoots, then it re-adapts"
+                elif at and goals_hit == 1 and sim.t > 5:
+                    end_t = end_t or sim.t + 3.0
+                    ui["beat"] = "Act 2 · back on target"
+                    if sim.t >= end_t:
+                        break
             while ui["log"]:
                 log_lines = (log_lines + [ui["log"].pop(0)])[-2:]
             renderer.update_scene(sim.data, camera=cam)

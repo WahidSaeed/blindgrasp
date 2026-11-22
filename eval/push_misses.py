@@ -39,12 +39,14 @@ def main() -> None:
     fig, ax = plt.subplots(figsize=(7, 3.6))
     print(f"{'learner':8s} {'adapt':6s} " + " ".join(f"{x:>5d}" for x in xs) + "   (prediction miss, cm; push 1 = first after change)")
     for (lr, ad), seqs in sorted(curves.items()):
-        m = np.nanmedian(np.vstack(seqs), axis=0)
+        with np.errstate(all="ignore"), __import__("warnings").catch_warnings():
+            __import__("warnings").simplefilter("ignore")
+            m = np.nanmedian(np.vstack(seqs), axis=0)
         print(f"{lr:8s} {ad:6s} " + " ".join(f"{v:5.1f}" if np.isfinite(v) else "    -" for v in m))
         ax.plot(xs, m, marker="o", label=f"{lr} · {'reset on change' if ad == 'reset' else 'never reset' if ad == 'none' else ad}")
     ax.axvline(0.5, color="k", lw=1, ls="--")
-    ax.text(0.6, ax.get_ylim()[1] * 0.92, "table turns icy", fontsize=9)
-    ax.set_xlabel("push (relative to the change)")
+    ax.text(0.4, ax.get_ylim()[1] * 0.5, "table turns icy ", fontsize=9, ha="right")
+    ax.set_xlabel("predicted push, relative to the change (after a reset, exploratory pushes aren't predicted)")
     ax.set_ylabel("prediction miss (cm), median over seeds")
     ax.legend(frameon=False)
     ax.spines[["top", "right"]].set_visible(False)
