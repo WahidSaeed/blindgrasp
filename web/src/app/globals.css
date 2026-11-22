@@ -1,91 +1,81 @@
 @import "tailwindcss";
 
-/* Blindgrasp — "tactile lab notebook": paper, ink, safety orange for touch, cobalt for the model. */
+/* Blindgrasp workstation — a robotics lab console: graphite panels, hairline dividers,
+   amber = touch (what the robot felt), cyan = model (what TabPFN predicts). */
 @theme {
-  --font-display: var(--nf-display), Georgia, serif;
   --font-sans: var(--nf-body), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--nf-data), ui-monospace, monospace;
-  --color-paper: #f2ede3;
-  --color-paper-2: #e9e2d4;
-  --color-card: #fbf8f2;
-  --color-ink: #16130f;
-  --color-ink-2: #4a4339;
-  --color-ink-3: #8a8173;
-  --color-rule: #d6cdbc;
-  --color-touch: #ff5a1f;
-  --color-model: #2338d6;
-  --color-good: #127a4a;
-  --color-alert: #d11f2f;
+
+  --color-bench: #0c0d0f;
+  --color-panel: #141619;
+  --color-panel-2: #1a1d21;
+  --color-well: #0f1113;
+  --color-line: #262a30;
+  --color-line-2: #343941;
+  --color-fg: #d6d9dd;
+  --color-fg-2: #9ba2aa;
+  --color-fg-3: #626a73;
+  --color-touch: #f5a524;
+  --color-model: #3fb6e8;
+  --color-ok: #4ccf72;
+  --color-warn: #ff5a52;
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
-  background-color: var(--color-paper);
-  /* faint dot grid, like a bullet-journal page */
-  background-image: radial-gradient(rgb(22 19 15 / 0.13) 1px, transparent 1.2px);
-  background-size: 22px 22px;
-  color: var(--color-ink);
+  background: var(--color-bench);
+  color: var(--color-fg);
   font-family: var(--font-sans);
+  font-size: 13px;
 }
 
 @layer components {
-  .sheet {
-    @apply border-[1.5px] border-ink bg-card;
+  .panel {
+    @apply flex min-h-0 min-w-0 flex-col bg-panel;
   }
-  .stamp {
-    @apply inline-flex items-center gap-1.5 border-[1.5px] border-ink bg-card px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wider text-ink;
+  .panel-head {
+    @apply flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel-2 px-3 font-mono text-[10.5px] font-medium uppercase tracking-[0.12em] text-fg-2;
   }
-  .eyebrow {
-    @apply font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-ink-3;
+  .section-title {
+    @apply flex items-center gap-2 px-3 pt-4 pb-2 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-3;
   }
-  .press {
-    @apply inline-flex items-center gap-2 border-[1.5px] border-ink bg-card px-3 py-2 text-sm font-medium text-ink transition-[transform,box-shadow] duration-75;
-    box-shadow: 3px 3px 0 0 var(--color-ink);
+  .section-title::after {
+    content: "";
+    @apply h-px flex-1 bg-line;
   }
-  .press:hover {
-    @apply bg-paper-2;
+  .tool {
+    @apply inline-flex h-7 items-center gap-1.5 rounded-[3px] border border-line-2 bg-panel-2 px-2.5 text-xs text-fg transition-colors hover:border-fg-3 hover:bg-[#22262b] active:bg-[#2a2f35];
   }
-  .press:active,
-  .press[data-on="true"] {
-    transform: translate(3px, 3px);
-    box-shadow: 0 0 0 0 var(--color-ink);
+  .tool-on {
+    @apply border-model/60 bg-model/15 text-model hover:border-model hover:bg-model/20;
   }
-  .press-ink {
-    @apply bg-ink text-paper hover:bg-ink-2;
+  .tool-touch {
+    @apply border-touch/60 bg-touch/15 text-touch hover:border-touch hover:bg-touch/20;
   }
-  .press-touch {
-    @apply bg-touch text-ink hover:bg-touch;
-  }
-  .press-model {
-    @apply bg-model text-paper hover:bg-model;
-  }
-  .key {
-    @apply inline-grid min-w-5 place-items-center border border-current px-1 font-mono text-[10px] leading-4 opacity-70;
+  .kbd {
+    @apply inline-grid h-[18px] min-w-[18px] place-items-center rounded-[3px] border border-line-2 bg-well px-1 font-mono text-[10px] text-fg-3;
   }
   .field {
-    @apply w-full appearance-none border-[1.5px] border-ink bg-card px-3 py-2 font-mono text-[13px] text-ink outline-none focus:bg-paper-2;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2316130f' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    @apply h-7 w-full appearance-none rounded-[3px] border border-line-2 bg-well px-2 font-mono text-xs text-fg outline-none hover:border-fg-3 focus:border-model;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ba2aa' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 0.75rem center;
+    background-position: right 0.5rem center;
   }
-  .graph-paper {
-    background-color: var(--color-card);
-    background-image: linear-gradient(rgb(35 56 214 / 0.07) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(35 56 214 / 0.07) 1px, transparent 1px);
-    background-size: 12px 12px;
-  }
-  .hatch {
-    background-image: repeating-linear-gradient(-45deg, rgb(22 19 15 / 0.08) 0 1px, transparent 1px 6px);
+  .bench-grid {
+    background-color: var(--color-well);
+    background-image: linear-gradient(rgb(255 255 255 / 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255 / 0.025) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 }
 
 @keyframes fadein {
   from {
     opacity: 0;
-    transform: translateY(-3px);
+    transform: translateY(-2px);
   }
   to {
     opacity: 1;
@@ -94,14 +84,22 @@ body {
 }
 @keyframes blink {
   50% {
-    opacity: 0.25;
+    opacity: 0.2;
   }
 }
 
 input[type="range"] {
-  accent-color: var(--color-ink);
+  accent-color: var(--color-model);
 }
-::selection {
-  background: var(--color-touch);
-  color: var(--color-ink);
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-2);
+  border: 2px solid var(--color-panel);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
