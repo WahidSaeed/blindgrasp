@@ -103,3 +103,13 @@ bench/ eval/   latency benchmark, Phase 1 acceptance, map and push evaluations
 - Puck mass doesn't matter for these pushes (< 0.6 cm change): the paddle is position-controlled and a sliding
   puck's stopping distance doesn't depend on mass. Use the icy table as the Act 2 interrupt.
 - Pushing, 3 seeds: TabPFN reaches goals in a median of 4 pushes from an empty context (GP 5), 3 after a change.
+
+## Deploy (Render + Vercel, hosted TabPFN)
+
+- **Sim server → Render.** `Dockerfile` builds a slim image (no PyTorch, no local weights; `BLINDGRASP_BACKEND=hosted`,
+  headless MuJoCo via OSMesa). `render.yaml` is a Blueprint for it (Standard plan: 1 CPU / 2 GB). Set two env vars in
+  the Render dashboard: `TABPFN_TOKEN` (secret) and `ALLOWED_ORIGINS` (the Vercel URL, e.g. `https://blindgrasp.vercel.app`).
+- **UI → Vercel.** Import the repo with root directory `web/` and set `NEXT_PUBLIC_SIM_URL` to the Render URL
+  (e.g. `https://blindgrasp-sim.onrender.com`). Redeploy after changing it - it is baked in at build time.
+- One simulation is shared by everyone who opens the page, and the hosted TabPFN daily token cap is shared too.
+

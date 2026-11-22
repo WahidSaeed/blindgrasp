@@ -1,0 +1,14 @@
+# Render Blueprint for the sim server. Create it from the Render dashboard (New > Blueprint) and fill in the
+# two secrets when prompted. The Next.js UI is deployed on Vercel (root directory: web/).
+services:
+  - type: web
+    name: blindgrasp-sim
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: standard        # 1 CPU / 2 GB. Rendering + physics need a full CPU; starter (0.5 CPU) is too slow.
+    healthCheckPath: /state
+    envVars:
+      - key: TABPFN_TOKEN
+        sync: false       # paste your token in the dashboard; never commit it
+      - key: ALLOWED_ORIGINS
+        sync: false       # e.g. https://blindgrasp.vercel.app

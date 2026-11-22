@@ -28,7 +28,10 @@ def best_device() -> str:
     forced = os.environ.get("BLINDGRASP_DEVICE", "").strip().lower()
     if forced:
         return forced
-    import torch
+    try:
+        import torch  # only installed for local TabPFN; the hosted deployment doesn't need it
+    except ImportError:
+        return "cpu"
 
     if torch.cuda.is_available():
         return "cuda"

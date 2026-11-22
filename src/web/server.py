@@ -7,12 +7,14 @@ controls and live curves. No mjpython or GLFW window needed.
 Mouse on the video: drag = orbit, wheel = zoom, click a box/puck/goal to select it, then click the
 table to move it there (this is the "presenter moves a box" interrupt).
 
-Binds to 127.0.0.1 by default. --host 0.0.0.0 exposes it on your network (no auth) - only on a trusted LAN.
+Binds to 127.0.0.1 by default (HOST/PORT env vars or --host/--port override). There is no auth: anyone who can reach
+it can drive the shared simulation. In production set ALLOWED_ORIGINS to the UI's URL.
 """
 from __future__ import annotations
 
 import argparse
 import io
+import os
 import json
 import queue
 import threading
@@ -53,6 +55,7 @@ class App:
         self.frame_cv = threading.Condition()
         self.jpeg: bytes | None = None
         self.frame_id = 0
+        self.allowed_origins: set[str] = {"*"}
         self.state_lock = threading.Lock()
         self.state: dict = {}
         self.stop = threading.Event()
@@ -322,9 +325,14 @@ def make_handler(app: App):
             self.wfile.write(body)
 
         def _cors(self) -> None:
-            # The Next.js UI (web/, http://localhost:3000) calls this server from another origin. Local only:
-            # the server binds to 127.0.0.1 by default.
-            self.send_header("Access-Control-Allow-Origin", "*")
+            # The Next.js UI calls this server from another origin (localhost:3000 locally, Vercel in production).
+            origin = self.headers.get("Origin", "")
+            allowed = app.allowed_origins
+            if "*" in allowed:
+                self.send_header("Access-Control-Allow-Origin", "*")
+            elif origin in allowed:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
@@ -382,8 +390,9 @@ def main() -> None:
     ap.add_argument("--n-estimators", type=int, default=None, help="TabPFN ensemble size (fewer = faster)")
     ap.add_argument("--pred-step", type=float, default=None, help="predict the map on a coarser grid (m), e.g. 0.04")
     ap.add_argument("--max-rows", type=int, default=None, help="cap the map context to the most recent N rows")
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8000)
+    # Hosting platforms (Render etc.) pass HOST/PORT in the environment.
+    ap.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     ap.add_argument("--width", type=int, default=960)
     ap.add_argument("--height", type=int, default=600)
     ap.add_argument("--fps", type=float, default=25)
@@ -392,6 +401,8 @@ def main() -> None:
 
     app = App(args.learner, args.strategy, args.width, args.height, args.fps, args.speed, args.mode, args.adapt,
               args.n_estimators, args.pred_step, args.max_rows)
+    # Which web origins may call this server (comma-separated). "*" is fine locally; set it to the UI's URL in production.
+    app.allowed_origins = {o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()}
     sim_thread = threading.Thread(target=app.run, name="sim", daemon=True)
     sim_thread.start()
     server = ThreadingHTTPServer((args.host, args.port), make_handler(app))

@@ -1,0 +1,9 @@
+# Sim server only, hosted TabPFN (no torch / local weights). Used by the Dockerfile.
+mujoco>=3.2
+mink>=0.0.5
+tabpfn-client>=0.1
+python-dotenv>=1.0
+scikit-learn>=1.4
+scipy>=1.11
+numpy>=1.26
+pillow>=10.0

@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+.venv
+web
+eval
+bench
+mujoco_menagerie
+**/__pycache__
+*.pyc
+*.mp4
+.DS_Store
